@@ -16,6 +16,7 @@ import java.time.ZoneOffset;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Formula;
 
 /**
  * Stock position for one variant.
@@ -69,6 +70,14 @@ public class Inventory {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+    /**
+     * Same value as {@link #getAvailable()}, computed in SQL rather than Java so it
+     * can be used directly in a {@code Pageable} sort or a {@code Specification}
+     * filter — same reasoning as {@code Product.minPrice}/{@code maxPrice}.
+     */
+    @Formula("(qty_on_hand - qty_reserved)")
+    private Integer availableQty;
 
     /** The only number a customer should ever see. */
     public int getAvailable() {

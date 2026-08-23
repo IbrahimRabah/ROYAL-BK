@@ -15,6 +15,8 @@ public record StockMovementResponse(
         String referenceId,
         String reason,
         Long actorId,
+        @Schema(description = "Copied at write time — the account may be renamed later")
+        String actorName,
         OffsetDateTime createdAt
 ) {
 }

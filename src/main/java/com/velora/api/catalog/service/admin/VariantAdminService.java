@@ -285,8 +285,12 @@ public class VariantAdminService {
             movement.setQtyAfter(opening);
             movement.setReferenceType("VARIANT_CREATE");
             movement.setReferenceId(String.valueOf(variant.getId()));
-            movement.setReason("Opening stock");
+            // No reason text: referenceType + referenceId already say this was the
+            // opening stock for a newly created variant. A hardcoded English
+            // "Opening stock" filler here made the ledger read half Arabic, half
+            // English for information the reference columns already carry.
             movement.setActorId(actorId);
+            movement.setActorName(auditService.resolveActorName(actorId));
             movementRepository.save(movement);
         }
     }

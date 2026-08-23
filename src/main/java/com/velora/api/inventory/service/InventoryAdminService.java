@@ -16,12 +16,17 @@ import com.velora.api.inventory.dto.StockMovementResponse;
 import com.velora.api.inventory.dto.StockReceiveRequest;
 import com.velora.api.inventory.repository.InventoryRepository;
 import com.velora.api.inventory.repository.StockMovementRepository;
+import com.velora.api.inventory.spec.InventorySpecifications;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,13 +60,20 @@ public class InventoryAdminService {
         this.auditService = auditService;
     }
 
-    /** Goods in from a supplier. */
+    /**
+     * Goods in from a supplier.
+     *
+     * <p>{@code note} is left as the staff member typed it — including absent. The
+     * movement type ({@code PURCHASE_RECEIVED}) already says this was a receipt; a
+     * hardcoded English "Goods received" filler when nobody wrote anything just
+     * makes the ledger read half Arabic, half English for a reason that carries no
+     * information the type doesn't already give.
+     */
     @Transactional
     public InventoryAdminResponse receive(Long variantId, StockReceiveRequest request,
                                           Long actorId) {
         return applyChange(variantId, request.quantity(), MovementType.PURCHASE_RECEIVED,
-                request.note() == null ? "Goods received" : request.note(),
-                "PURCHASE", request.reference(), actorId);
+                request.note(), "PURCHASE", request.reference(), actorId);
     }
 
     /**
@@ -89,6 +101,39 @@ public class InventoryAdminService {
         return inventoryRepository.findLowStock().stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    /**
+     * The full inventory list — paginated, searchable, filterable. What the low
+     * stock report is for a triage view, this is for the everyday stock screen:
+     * without it the front end would have to load every product and then every
+     * variant per product to build one table, with search and sort done in the
+     * browser instead of the database.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<InventoryAdminResponse> list(String q, Boolean lowStockOnly,
+                                                      Boolean outOfStockOnly, Long categoryId,
+                                                      String sort, Pageable pageable) {
+        Specification<Inventory> spec = Specification
+                .where(InventorySpecifications.matchesSkuOrProductName(q))
+                .and(InventorySpecifications.isLowStock(lowStockOnly))
+                .and(InventorySpecifications.isOutOfStock(outOfStockOnly))
+                .and(InventorySpecifications.inCategory(categoryId));
+
+        Page<Inventory> page = inventoryRepository.findAll(spec, applySort(pageable, sort));
+        return PageResponse.from(page, this::toResponse);
+    }
+
+    /**
+     * {@code availableQty} is the one column staff actually triage by, so it is the
+     * only sort offered today. Lowest first by default — that is the whole point of
+     * an inventory screen: the items closest to running out belong at the top.
+     */
+    private Pageable applySort(Pageable pageable, String sort) {
+        Sort.Direction direction = "available_desc".equals(sort)
+                ? Sort.Direction.DESC : Sort.Direction.ASC;
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                Sort.by(direction, "availableQty"));
     }
 
     @Transactional(readOnly = true)
@@ -136,6 +181,9 @@ public class InventoryAdminService {
         movement.setReferenceId(refId);
         movement.setReason(reason);
         movement.setActorId(actorId);
+        // Copied at write time, same as AuditLog.actorName — the account may be
+        // renamed or removed later, and the ledger must still say who did this.
+        movement.setActorName(auditService.resolveActorName(actorId));
         movementRepository.save(movement);
 
         log.info("Stock {} for variant id={} by {} -> {} ({})",
@@ -227,6 +275,7 @@ public class InventoryAdminService {
                 movement.getReferenceId(),
                 movement.getReason(),
                 movement.getActorId(),
+                movement.getActorName(),
                 movement.getCreatedAt());
     }
 }

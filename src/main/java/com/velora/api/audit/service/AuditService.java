@@ -101,9 +101,14 @@ public class AuditService {
         return PageResponse.from(page, this::toResponse);
     }
 
-    // ------------------------------------------------------------------ internal
-
-    private String resolveActorName(Long actorId) {
+    /**
+     * Resolves the human-readable name for an actor, at the moment of the call —
+     * copy the result onto the row you are writing rather than storing just the id,
+     * or the label will drift if the account is later renamed or removed. Shared by
+     * every ledger that needs a "who did this" column (audit log, stock movements),
+     * so the "first + last name, else user#id, else system" rule stays in one place.
+     */
+    public String resolveActorName(Long actorId) {
         if (actorId == null) {
             return "system";
         }

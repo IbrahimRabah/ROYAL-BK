@@ -63,6 +63,10 @@ public class StockMovement {
     @Column(name = "actor_id")
     private Long actorId;
 
+    /** Copied, because the account may be renamed or removed later. */
+    @Column(name = "actor_name", length = 150)
+    private String actorName;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
 }
