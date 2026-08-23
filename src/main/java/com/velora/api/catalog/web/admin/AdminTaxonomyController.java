@@ -1,17 +1,15 @@
 package com.velora.api.catalog.web.admin;
 
-import com.velora.api.catalog.dto.BrandResponse;
-import com.velora.api.catalog.dto.CategoryTreeResponse;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
+import com.velora.api.catalog.dto.admin.BrandAdminResponse;
 import com.velora.api.catalog.dto.admin.BrandSaveRequest;
+import com.velora.api.catalog.dto.admin.CategoryAdminResponse;
 import com.velora.api.catalog.dto.admin.CategorySaveRequest;
 import com.velora.api.catalog.service.admin.TaxonomyAdminService;
-import com.velora.api.catalog.web.LocaleResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -41,11 +39,12 @@ public class AdminTaxonomyController {
 
     @Operation(summary = "Full category tree",
             description = "Includes inactive categories, so staff can find and "
-                    + "reactivate what they turned off. Same shape as the storefront "
-                    + "tree at GET /api/v1/categories/tree.")
+                    + "reactivate what they turned off. Every node carries the full "
+                    + "translations[] and active flag — load a node straight into the "
+                    + "edit form and send it back whole.")
     @GetMapping("/categories")
-    public List<CategoryTreeResponse> listCategories(HttpServletRequest request) {
-        return taxonomyService.getCategoryTree(LocaleResolver.resolve(request));
+    public List<CategoryAdminResponse> listCategories() {
+        return taxonomyService.getCategoryTree();
     }
 
     @Operation(summary = "Create a category")
@@ -65,11 +64,12 @@ public class AdminTaxonomyController {
 
     @Operation(summary = "List all brands",
             description = "Includes inactive brands, so staff can find and "
-                    + "reactivate what they turned off. Same shape as the storefront "
-                    + "list at GET /api/v1/brands.")
+                    + "reactivate what they turned off. Carries nameAr/nameEn and "
+                    + "active — load a brand straight into the edit form and send it "
+                    + "back whole.")
     @GetMapping("/brands")
-    public List<BrandResponse> listBrands(HttpServletRequest request) {
-        return taxonomyService.listBrands(LocaleResolver.resolve(request));
+    public List<BrandAdminResponse> listBrands() {
+        return taxonomyService.listBrands();
     }
 
     @Operation(summary = "Create a brand")

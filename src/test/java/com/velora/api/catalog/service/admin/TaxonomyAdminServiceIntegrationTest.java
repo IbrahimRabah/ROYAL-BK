@@ -9,9 +9,9 @@ import com.velora.api.catalog.domain.AttributeValueTranslation;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.CategoryTranslation;
-import com.velora.api.catalog.dto.BrandResponse;
-import com.velora.api.catalog.dto.CategoryTreeResponse;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
+import com.velora.api.catalog.dto.admin.BrandAdminResponse;
+import com.velora.api.catalog.dto.admin.CategoryAdminResponse;
 import com.velora.api.catalog.dto.admin.VariantMatrixRequest;
 import com.velora.api.catalog.repository.AttributeRepository;
 import com.velora.api.catalog.repository.BrandRepository;
@@ -140,31 +140,50 @@ class TaxonomyAdminServiceIntegrationTest {
     // ------------------------------------------------------------------- categories
 
     @Test
-    @DisplayName("Category tree includes inactive categories, unlike the storefront tree")
+    @DisplayName("Category tree includes inactive categories, unlike the storefront tree, "
+            + "and carries the active flag and full translations")
     void getCategoryTree_includesInactiveCategories() {
-        List<CategoryTreeResponse> tree = taxonomyService.getCategoryTree("ar");
+        List<CategoryAdminResponse> tree = taxonomyService.getCategoryTree();
 
-        CategoryTreeResponse parentNode = tree.stream()
+        CategoryAdminResponse parentNode = tree.stream()
                 .filter(n -> n.id().equals(parentCategoryId))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
                         "Inactive parent category missing from the admin tree"));
 
         assertThat(parentNode.children())
-                .extracting(CategoryTreeResponse::id)
+                .extracting(CategoryAdminResponse::id)
                 .contains(childCategoryId);
+
+        // The whole point of exposing this here: without it, staff cannot tell an
+        // inactive category (already hidden from the storefront) from an active one.
+        assertThat(parentNode.active()).isFalse();
+        assertThat(parentNode.translations())
+                .filteredOn(t -> t.locale().equals("ar"))
+                .extracting(com.velora.api.catalog.dto.admin.CategoryTranslationResponse::name)
+                .containsExactly("قسم تجريبي غير نشط " + unique);
     }
 
     // ---------------------------------------------------------------------- brands
 
     @Test
-    @DisplayName("Brand list includes inactive brands, unlike the storefront list")
+    @DisplayName("Brand list includes inactive brands and carries both names plus active")
     void listBrands_includesInactiveBrands() {
-        List<BrandResponse> brands = taxonomyService.listBrands("ar");
+        List<BrandAdminResponse> brands = taxonomyService.listBrands();
 
         assertThat(brands)
-                .extracting(BrandResponse::id)
+                .extracting(BrandAdminResponse::id)
                 .contains(activeBrandId, inactiveBrandId);
+
+        BrandAdminResponse active = brands.stream()
+                .filter(b -> b.id().equals(activeBrandId)).findFirst().orElseThrow();
+        BrandAdminResponse inactive = brands.stream()
+                .filter(b -> b.id().equals(inactiveBrandId)).findFirst().orElseThrow();
+
+        assertThat(active.active()).isTrue();
+        assertThat(active.nameAr()).isEqualTo("براند نشط " + unique);
+        assertThat(active.nameEn()).isEqualTo("Active Brand " + unique);
+        assertThat(inactive.active()).isFalse();
     }
 
     // ------------------------------------------------------------------------ seed

@@ -8,14 +8,14 @@ import com.velora.api.catalog.domain.AttributeValueTranslation;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.CategoryTranslation;
-import com.velora.api.catalog.dto.BrandResponse;
-import com.velora.api.catalog.dto.CategoryTreeResponse;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
+import com.velora.api.catalog.dto.admin.BrandAdminResponse;
 import com.velora.api.catalog.dto.admin.BrandSaveRequest;
+import com.velora.api.catalog.dto.admin.CategoryAdminResponse;
 import com.velora.api.catalog.dto.admin.CategorySaveRequest;
+import com.velora.api.catalog.dto.admin.CategoryTranslationResponse;
 import com.velora.api.catalog.dto.admin.TranslationRequest;
-import com.velora.api.catalog.mapper.CatalogMapper;
 import com.velora.api.catalog.repository.AttributeRepository;
 import com.velora.api.catalog.repository.BrandRepository;
 import com.velora.api.catalog.repository.CategoryRepository;
@@ -47,16 +47,13 @@ public class TaxonomyAdminService {
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final AttributeRepository attributeRepository;
-    private final CatalogMapper mapper;
 
     public TaxonomyAdminService(CategoryRepository categoryRepository,
                                 BrandRepository brandRepository,
-                                AttributeRepository attributeRepository,
-                                CatalogMapper mapper) {
+                                AttributeRepository attributeRepository) {
         this.categoryRepository = categoryRepository;
         this.brandRepository = brandRepository;
         this.attributeRepository = attributeRepository;
-        this.mapper = mapper;
     }
 
     // ------------------------------------------------------------------- reads
@@ -81,10 +78,14 @@ public class TaxonomyAdminService {
 
     /**
      * The full category tree, including inactive categories — staff need to find
-     * what they turned off in order to turn it back on.
+     * what they turned off in order to turn it back on. Unlike the storefront tree
+     * ({@code CategoryService.getTree}), every node carries {@code active} (so staff
+     * can actually tell an inactive category apart from an active one — the whole
+     * point of including inactive ones here) and the full {@code translations[]},
+     * since {@code PUT /admin/categories/{id}} replaces them wholesale.
      */
     @Transactional(readOnly = true)
-    public List<CategoryTreeResponse> getCategoryTree(String locale) {
+    public List<CategoryAdminResponse> getCategoryTree() {
         List<Category> all = categoryRepository.findAllByOrderByDisplayOrderAscIdAsc();
 
         Map<Long, List<Category>> byParent = all.stream()
@@ -94,31 +95,64 @@ public class TaxonomyAdminService {
         return all.stream()
                 .filter(c -> c.getParent() == null)
                 .sorted(Comparator.comparing(Category::getDisplayOrder))
-                .map(root -> buildCategoryNode(root, byParent, locale, 0))
+                .map(root -> buildCategoryAdminNode(root, byParent, 0))
                 .toList();
     }
 
-    /** Every brand, including inactive ones, for the same reason as the category tree. */
+    /**
+     * Every brand, including inactive ones, for the same reason as the category
+     * tree. {@code nameAr}/{@code nameEn} are both always returned — {@code Brand}
+     * has no separate translation table, so there is no per-locale view to pick.
+     */
     @Transactional(readOnly = true)
-    public List<BrandResponse> listBrands(String locale) {
+    public List<BrandAdminResponse> listBrands() {
         return brandRepository.findAllByOrderByNameArAsc().stream()
-                .map(brand -> mapper.toBrand(brand, locale))
+                .map(this::toBrandAdminResponse)
                 .toList();
     }
 
-    private CategoryTreeResponse buildCategoryNode(Category category,
-                                                    Map<Long, List<Category>> byParent,
-                                                    String locale,
-                                                    int depth) {
+    private BrandAdminResponse toBrandAdminResponse(Brand brand) {
+        return new BrandAdminResponse(
+                brand.getId(),
+                brand.getSlug(),
+                brand.getNameAr(),
+                brand.getNameEn(),
+                brand.getLogoUrl(),
+                brand.isActive());
+    }
+
+    private CategoryAdminResponse buildCategoryAdminNode(Category category,
+                                                          Map<Long, List<Category>> byParent,
+                                                          int depth) {
         // Guard against a cycle introduced by a bad parent_id, same as the storefront tree.
-        List<CategoryTreeResponse> children = depth >= 5
+        List<CategoryAdminResponse> children = depth >= 5
                 ? List.of()
                 : byParent.getOrDefault(category.getId(), List.of()).stream()
                         .sorted(Comparator.comparing(Category::getDisplayOrder))
-                        .map(child -> buildCategoryNode(child, byParent, locale, depth + 1))
+                        .map(child -> buildCategoryAdminNode(child, byParent, depth + 1))
                         .toList();
 
-        return mapper.toTreeNode(category, locale, children);
+        List<CategoryTranslationResponse> translations = category.getTranslations().values().stream()
+                .sorted(Comparator.comparing(t -> t.getKey().getLocale()))
+                .map(t -> new CategoryTranslationResponse(
+                        t.getKey().getLocale(),
+                        t.getName(),
+                        t.getDescription(),
+                        t.getMetaTitle(),
+                        t.getMetaDescription()))
+                .toList();
+
+        return new CategoryAdminResponse(
+                category.getId(),
+                category.getSlug(),
+                category.getParent() == null ? null : category.getParent().getId(),
+                translations,
+                category.getImageUrl(),
+                category.getBannerUrl(),
+                category.getDisplayOrder(),
+                category.isActive(),
+                category.getProductCount() == null ? 0 : category.getProductCount(),
+                children);
     }
 
     private AttributeAdminResponse toAttributeAdminResponse(Attribute attribute) {
