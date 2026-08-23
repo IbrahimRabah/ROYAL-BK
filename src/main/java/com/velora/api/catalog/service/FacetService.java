@@ -49,6 +49,15 @@ public class FacetService {
                         attribute.getCode(),
                         attribute.nameFor(locale),
                         attribute.getValues().stream()
+                                // AttributeRepository fetch-joins values.translations
+                                // alongside values — a value with 2 translations (ar+en)
+                                // makes Hibernate hydrate the SAME AttributeValue row
+                                // twice per translation, doubling again if the attribute
+                                // itself has 2 translations. Same cartesian-product
+                                // pattern as ProductVariantRepository / AttributeRepository
+                                // elsewhere in this codebase; distinct() collapses the
+                                // duplicates back since they're the same managed entity.
+                                .distinct()
                                 .sorted(Comparator.comparing(AttributeValue::getDisplayOrder))
                                 .map(v -> AttributeValueResponse.of(
                                         v.getId(), v.getCode(),

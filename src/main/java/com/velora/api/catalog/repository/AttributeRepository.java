@@ -40,17 +40,37 @@ public interface AttributeRepository extends JpaRepository<Attribute, Long> {
      * Filter facets for a category: only the attribute values that actually occur on
      * products in that category. Showing a colour with zero results is a dead end
      * for the customer.
+     *
+     * <p>An attribute value is only ever linked one of two ways, never both: via
+     * {@code VariantAttributeValue} for variant-defining attributes (colour, size),
+     * or via {@code ProductAttributeValue} for specification-only ones (strap
+     * material, movement). Checking only the variant table would silently exclude
+     * every specification-only attribute from the filter sidebar, even when
+     * products in the category genuinely have the value set.
      */
     @Query("""
             select distinct a from Attribute a
             join a.values v
-            join VariantAttributeValue vav on vav.attributeValue.id = v.id
-            join vav.variant var
-            join var.product p
             where a.filterable = true
-              and p.status = com.velora.api.catalog.domain.ProductStatus.ACTIVE
-              and p.archivedAt is null
-              and (p.category.id = :categoryId or p.category.parent.id = :categoryId)
+              and (
+                exists (
+                    select 1 from VariantAttributeValue vav
+                    join vav.variant var
+                    join var.product p
+                    where vav.attributeValue.id = v.id
+                      and p.status = com.velora.api.catalog.domain.ProductStatus.ACTIVE
+                      and p.archivedAt is null
+                      and (p.category.id = :categoryId or p.category.parent.id = :categoryId)
+                )
+                or exists (
+                    select 1 from ProductAttributeValue pav
+                    join pav.product p
+                    where pav.attributeValue.id = v.id
+                      and p.status = com.velora.api.catalog.domain.ProductStatus.ACTIVE
+                      and p.archivedAt is null
+                      and (p.category.id = :categoryId or p.category.parent.id = :categoryId)
+                )
+              )
             order by a.displayOrder asc
             """)
     List<Attribute> findFacetsForCategory(@Param("categoryId") Long categoryId);

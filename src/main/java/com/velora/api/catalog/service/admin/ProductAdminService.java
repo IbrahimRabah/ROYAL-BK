@@ -1,6 +1,8 @@
 package com.velora.api.catalog.service.admin;
 
 import com.velora.api.catalog.domain.Attribute;
+import com.velora.api.catalog.domain.AttributeDataType;
+import com.velora.api.catalog.domain.AttributeValue;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.Product;
@@ -10,6 +12,7 @@ import com.velora.api.catalog.domain.ProductTranslation;
 import com.velora.api.catalog.dto.admin.ProductAdminResponse;
 import com.velora.api.catalog.dto.admin.ProductCreateRequest;
 import com.velora.api.catalog.dto.admin.ProductUpdateRequest;
+import com.velora.api.catalog.dto.admin.SpecificationAdminResponse;
 import com.velora.api.catalog.dto.admin.TranslationRequest;
 import com.velora.api.catalog.dto.admin.TranslationResponse;
 import com.velora.api.catalog.repository.AttributeRepository;
@@ -26,6 +29,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -112,10 +116,6 @@ public class ProductAdminService {
             applyTranslations(product, request.translations());
         }
         if (request.specifications() != null) {
-            // Specifications have no natural key collision risk: the composite key is
-            // (product_id, attribute_id) and the whole set is replaced, so clearing is
-            // safe here in a way it is not for translations.
-            product.getSpecifications().clear();
             applySpecifications(product, request.specifications());
         }
 
@@ -270,23 +270,75 @@ public class ProductAdminService {
         if (specs == null) {
             return;
         }
-        List<ProductAttributeValue> list = new ArrayList<>();
+
+        /*
+         * Merged IN PLACE, never cleared and rebuilt — same reasoning as
+         * applyTranslations.
+         *
+         * Clearing and re-adding a specification for an attribute that already had
+         * one schedules the INSERT of the new row before the DELETE of the old one
+         * within the same flush. Both carry the same composite primary key
+         * (product_id, attribute_id), and Hibernate cannot reconcile two different
+         * object instances at that identity — it throws NonUniqueObjectException,
+         * surfacing as a raw 500 on an ordinary re-save that changed nothing about
+         * the specification at all. (The comment this replaced claimed there was
+         * "no natural key collision risk" here; there is — it is the exact
+         * translations problem, just for a different table.)
+         */
+        Map<Long, ProductAttributeValue> existingByAttribute = product.getSpecifications().stream()
+                .collect(Collectors.toMap(pav -> pav.getAttribute().getId(), pav -> pav));
+
+        Set<Long> incomingAttributeIds = specs.stream()
+                .map(ProductCreateRequest.SpecificationRequest::attributeId)
+                .collect(Collectors.toSet());
+        product.getSpecifications()
+                .removeIf(pav -> !incomingAttributeIds.contains(pav.getAttribute().getId()));
+
         for (ProductCreateRequest.SpecificationRequest spec : specs) {
             Attribute attribute = attributeRepository.findById(spec.attributeId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.ATTRIBUTE_NOT_FOUND,
                             "Attribute not found: " + spec.attributeId()));
 
-            ProductAttributeValue pav = new ProductAttributeValue();
-            // Same rule as the translations: @MapsId derives both halves of the
-            // composite key from these associations. Setting them by hand would put
-            // a null product id in the key on create.
-            pav.setKey(new ProductAttributeValue.Key());
-            pav.setProduct(product);
-            pav.setAttribute(attribute);
-            pav.setValueText(spec.valueText());
-            list.add(pav);
+            ProductAttributeValue pav = existingByAttribute.get(spec.attributeId());
+            if (pav == null) {
+                pav = new ProductAttributeValue();
+                // @MapsId derives both halves of the composite key from these
+                // associations. Setting them by hand would put a null product id in
+                // the key on create.
+                pav.setKey(new ProductAttributeValue.Key());
+                pav.setProduct(product);
+                pav.setAttribute(attribute);
+                product.getSpecifications().add(pav);
+            }
+
+            /*
+             * A LIST attribute's value is a reference to AttributeValue, never free
+             * text — ProductAttributeValue.displayValue() only falls back to
+             * valueText when attributeValue is null. Setting valueText alone for a
+             * LIST attribute (the previous behaviour here) saved a row with BOTH
+             * fields null: a specification that looked like it saved (200 OK) but
+             * carried no value at all, and was silently dropped everywhere it was
+             * read back (buildSpecifications() filters out a null display value).
+             */
+            if (attribute.getDataType() == AttributeDataType.LIST) {
+                if (spec.attributeValueId() == null) {
+                    throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                            "'%s' is a list attribute — attributeValueId is required"
+                                    .formatted(attribute.getCode()));
+                }
+                AttributeValue value = attribute.getValues().stream()
+                        .filter(v -> v.getId().equals(spec.attributeValueId()))
+                        .findFirst()
+                        .orElseThrow(() -> new BusinessException(ErrorCode.ATTRIBUTE_VALUE_NOT_FOUND,
+                                "Value %d does not belong to attribute '%s'"
+                                        .formatted(spec.attributeValueId(), attribute.getCode())));
+                pav.setAttributeValue(value);
+                pav.setValueText(null);
+            } else {
+                pav.setValueText(spec.valueText());
+                pav.setAttributeValue(null);
+            }
         }
-        product.getSpecifications().addAll(list);
     }
 
     private String resolveSlug(String requested, List<TranslationRequest> translations,
@@ -366,6 +418,14 @@ public class ProductAdminService {
                         t.getMetaDescription()))
                 .toList();
 
+        List<SpecificationAdminResponse> specifications = product.getSpecifications().stream()
+                .sorted(Comparator.comparing(pav -> pav.getAttribute().getDisplayOrder()))
+                .map(pav -> new SpecificationAdminResponse(
+                        pav.getAttribute().getId(),
+                        pav.getAttributeValue() == null ? null : pav.getAttributeValue().getId(),
+                        pav.getValueText()))
+                .toList();
+
         return new ProductAdminResponse(
                 product.getId(),
                 product.getSlug(),
@@ -379,6 +439,7 @@ public class ProductAdminService {
                 product.getBrand() == null ? null : product.getBrand().getNameAr(),
                 product.isFeatured(),
                 product.isNewArrival(),
+                specifications,
                 product.getVariants().size(),
                 product.getImages().size(),
                 product.getMinPrice(),

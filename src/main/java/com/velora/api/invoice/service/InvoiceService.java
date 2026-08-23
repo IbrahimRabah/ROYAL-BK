@@ -243,6 +243,18 @@ public class InvoiceService {
         return invoiceRepository.findDeliveredOrderIdsWithoutInvoice();
     }
 
+    /**
+     * The number for {@code GET /me/invoices/{invoiceNumber}/pdf}, or {@code null} if
+     * the order has not reached DELIVERED yet — invoices are issued on delivery, not
+     * on confirmation, so this is legitimately absent for most open orders.
+     */
+    @Transactional(readOnly = true)
+    public String findInvoiceNumberForOrder(Long orderId) {
+        return invoiceRepository.findByOrderId(orderId)
+                .map(Invoice::getInvoiceNumber)
+                .orElse(null);
+    }
+
     // ------------------------------------------------------------------ internal
 
 private byte[] renderPdf(Invoice invoice) {

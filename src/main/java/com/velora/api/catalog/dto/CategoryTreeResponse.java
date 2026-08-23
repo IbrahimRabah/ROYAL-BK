@@ -12,6 +12,8 @@ public record CategoryTreeResponse(
         String imageUrl,
         String bannerUrl,
         int displayOrder,
+        @Schema(description = "Live products in this category or its direct children")
+        int productCount,
         List<CategoryTreeResponse> children
 ) {
 }

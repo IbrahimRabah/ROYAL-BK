@@ -69,6 +69,7 @@ public class CategoryService {
                 translation == null ? null : translation.getDescription(),
                 category.getImageUrl(),
                 category.getBannerUrl(),
+                category.getProductCount() == null ? 0 : category.getProductCount(),
                 children,
                 mapper.buildBreadcrumb(category, locale),
                 translation == null ? null : translation.getMetaTitle(),

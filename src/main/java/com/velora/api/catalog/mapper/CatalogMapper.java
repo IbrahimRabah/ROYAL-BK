@@ -250,6 +250,7 @@ public class CatalogMapper {
                 category.getImageUrl(),
                 category.getBannerUrl(),
                 category.getDisplayOrder(),
+                category.getProductCount() == null ? 0 : category.getProductCount(),
                 children);
     }
 

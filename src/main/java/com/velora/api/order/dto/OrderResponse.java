@@ -47,6 +47,10 @@ public record OrderResponse(
 
         String customerNote,
 
+        @Schema(description = "Null until the order is DELIVERED and the invoice is issued. "
+                + "Use it to build GET /me/invoices/{invoiceNumber}/pdf")
+        String invoiceNumber,
+
         List<OrderItemResponse> items,
         int totalQuantity,
 

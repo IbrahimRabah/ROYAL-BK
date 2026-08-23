@@ -20,6 +20,8 @@ public record OrderSummaryResponse(
         String governorateName,
         @Schema(description = "First item's image, for the list thumbnail")
         String thumbnailUrl,
-        OffsetDateTime placedAt
+        OffsetDateTime placedAt,
+        @Schema(description = "Null until the order is DELIVERED and the invoice is issued")
+        String invoiceNumber
 ) {
 }

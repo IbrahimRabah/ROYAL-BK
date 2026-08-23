@@ -25,6 +25,7 @@ import com.velora.api.invoice.service.InvoiceService;
 import com.velora.api.order.domain.CustomerOrder;
 import com.velora.api.order.domain.FulfillmentStatus;
 import com.velora.api.order.domain.PaymentStatus;
+import com.velora.api.order.dto.OrderResponse;
 import com.velora.api.order.dto.PlaceOrderRequest;
 import com.velora.api.order.repository.OrderRepository;
 import com.velora.api.order.service.CheckoutService;
@@ -211,6 +212,12 @@ class PurchaseJourneyIntegrationTest {
                         + "available to anyone else while held")
                 .isEqualTo(OPENING_STOCK - 2);
 
+        // Not delivered yet, so there is no invoice — the response must say so
+        // plainly rather than the field silently being missing from the DTO.
+        assertThat(orderService.getForAdmin(orderId, "ar").invoiceNumber())
+                .as("no invoice before delivery")
+                .isNull();
+
         // ---- 5. Deliver. The invoice issues itself. ----
         advance(orderId, FulfillmentStatus.OUT_FOR_DELIVERY);
         advance(orderId, FulfillmentStatus.DELIVERED);
@@ -221,6 +228,10 @@ class PurchaseJourneyIntegrationTest {
                 .isNotNull();
         assertThat(invoice.getInvoiceNumber()).startsWith("VLR-INV-");
         assertThat(invoice.getSequenceNumber()).isPositive();
+
+        // The customer needs this number to build GET /me/invoices/{invoiceNumber}/pdf.
+        OrderResponse afterDelivery = orderService.getForAdmin(orderId, "ar");
+        assertThat(afterDelivery.invoiceNumber()).isEqualTo(invoice.getInvoiceNumber());
 
         // Payment stays PENDING on a delivered COD order until the courier remits.
         CustomerOrder delivered = order(orderId);

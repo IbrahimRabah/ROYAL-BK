@@ -26,6 +26,11 @@ public record ProductAdminResponse(
         String brandName,
         boolean featured,
         boolean newArrival,
+        @Schema(description = "Informational specifications — movement, water resistance, "
+                + "strap material. Load this into the edit form and send it back whole; a "
+                + "response missing this field would round-trip as the specifications being "
+                + "cleared, exactly like translations.")
+        List<SpecificationAdminResponse> specifications,
         int variantCount,
         int imageCount,
         BigDecimal minPrice,

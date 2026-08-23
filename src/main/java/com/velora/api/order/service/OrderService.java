@@ -310,7 +310,8 @@ public class OrderService {
                 PhoneNormalizer.toLocalFormat(order.getContactPhone()),
                 order.getShipGovernorateName(),
                 thumbnail,
-                order.getPlacedAt());
+                order.getPlacedAt(),
+                invoiceService.findInvoiceNumberForOrder(order.getId()));
     }
 
     private OrderResponse toResponse(CustomerOrder order, String locale) {
@@ -362,6 +363,7 @@ public class OrderService {
                 order.getDeliveryDaysMin() == null ? null : (int) order.getDeliveryDaysMin(),
                 order.getDeliveryDaysMax() == null ? null : (int) order.getDeliveryDaysMax(),
                 order.getCustomerNote(),
+                invoiceService.findInvoiceNumberForOrder(order.getId()),
                 items,
                 order.totalQuantity(),
                 timeline,

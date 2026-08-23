@@ -1,6 +1,7 @@
 package com.velora.api.catalog.spec;
 
 import com.velora.api.catalog.domain.Product;
+import com.velora.api.catalog.domain.ProductAttributeValue;
 import com.velora.api.catalog.domain.ProductStatus;
 import com.velora.api.catalog.domain.ProductTranslation;
 import com.velora.api.catalog.domain.ProductVariant;
@@ -110,9 +111,18 @@ public final class ProductSpecifications {
 
     /**
      * Products having at least one variant carrying any of the given attribute
-     * values — colour = gold OR silver.
+     * values — colour = gold OR silver — OR having the value set directly as a
+     * specification, for attributes that are not variant-defining.
      *
-     * <p>Uses an EXISTS subquery rather than a join, which keeps the row count
+     * <p>An attribute is only ever linked one of two ways, never both:
+     * {@link com.velora.api.catalog.domain.VariantAttributeValue} for variant-defining
+     * attributes (colour, size — each value is its own SKU), or
+     * {@link ProductAttributeValue} for specification-only attributes (strap
+     * material, movement — informational, never creates a SKU). A filter checking
+     * only the variant table silently returns zero products for every
+     * specification-only value, even when the product genuinely has it set.
+     *
+     * <p>Uses EXISTS subqueries rather than joins, which keeps the row count
      * unchanged and avoids the DISTINCT that would otherwise break pagination.
      */
     public static Specification<Product> hasAnyAttributeValue(Collection<Long> attributeValueIds) {
@@ -120,18 +130,26 @@ public final class ProductSpecifications {
             return alwaysTrue();
         }
         return (root, query, cb) -> {
-            Subquery<Long> sub = query.subquery(Long.class);
-            Root<ProductVariant> variant = sub.from(ProductVariant.class);
+            Subquery<Long> variantMatch = query.subquery(Long.class);
+            Root<ProductVariant> variant = variantMatch.from(ProductVariant.class);
             Join<ProductVariant, VariantAttributeValue> vav = variant.join("attributeValues");
 
-            sub.select(variant.get("id"))
+            variantMatch.select(variant.get("id"))
                     .where(cb.and(
                             cb.equal(variant.get("product").get("id"), root.get("id")),
                             cb.equal(variant.get("status"), VariantStatus.ACTIVE),
                             cb.isNull(variant.get("archivedAt")),
                             vav.get("attributeValue").get("id").in(attributeValueIds)));
 
-            return cb.exists(sub);
+            Subquery<Long> specMatch = query.subquery(Long.class);
+            Root<ProductAttributeValue> pav = specMatch.from(ProductAttributeValue.class);
+
+            specMatch.select(pav.get("product").get("id"))
+                    .where(cb.and(
+                            cb.equal(pav.get("product").get("id"), root.get("id")),
+                            pav.get("attributeValue").get("id").in(attributeValueIds)));
+
+            return cb.or(cb.exists(variantMatch), cb.exists(specMatch));
         };
     }
 

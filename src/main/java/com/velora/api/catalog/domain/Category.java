@@ -19,6 +19,7 @@ import java.util.Map;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Formula;
 
 /**
  * Self-referencing hierarchy. Two levels are used at launch (Watches -> Men Watches),
@@ -61,6 +62,19 @@ public class Category {
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL, orphanRemoval = true)
     @MapKey(name = "key.locale")
     private Map<String, CategoryTranslation> translations = new LinkedHashMap<>();
+
+    /**
+     * Live products in this category OR its direct children — the same
+     * "self or direct child" reach used everywhere else a category filters products
+     * (see {@code ProductSpecifications.inCategory},
+     * {@code AttributeRepository.findFacetsForCategory}): browsing "Watches" counts
+     * everything in "Men Watches" too.
+     */
+    @Formula("(select count(*) from product p "
+            + "where (p.category_id = id or p.category_id in "
+            + "(select c2.id from category c2 where c2.parent_id = id)) "
+            + "and p.status = 'ACTIVE' and p.archived_at is null)")
+    private Integer productCount;
 
     public String nameFor(String locale) {
         CategoryTranslation t = translations.get(locale);

@@ -11,6 +11,8 @@ public record CategoryDetailResponse(
         String description,
         String imageUrl,
         String bannerUrl,
+        @Schema(description = "Live products in this category or its direct children")
+        int productCount,
         List<CategoryTreeResponse> children,
         List<ProductDetailResponse.CategoryRefResponse> breadcrumb,
         String metaTitle,
