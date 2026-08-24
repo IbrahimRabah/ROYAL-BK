@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title th:text="'طلبك رقم ' + ${order.orderNumber}">تأكيد الطلب</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f3ef; font-family:Tahoma, Arial, sans-serif; direction:rtl;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f3ef; padding:24px 0;">
+    <tr>
+        <td align="center">
+            <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+                   style="background-color:#ffffff; border-radius:8px; overflow:hidden; max-width:600px; width:100%;">
+
+                <!-- header -->
+                <tr>
+                    <td style="background-color:#1c1c28; padding:24px 32px;">
+                        <span style="color:#a8862c; font-size:22px; font-weight:bold; letter-spacing:2px;">VELORA</span>
+                    </td>
+                </tr>
+
+                <!-- greeting -->
+                <tr>
+                    <td style="padding:28px 32px 8px 32px;">
+                        <p style="margin:0; font-size:16px; color:#1c1c28;">
+                            أهلًا <span th:text="${order.contactName}">العميل</span>،
+                        </p>
+                        <p style="margin:8px 0 0 0; font-size:14px; color:#555;">
+                            وصلنا طلبك وجاري تجهيزه. رقم طلبك:
+                            <strong style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                    th:text="${order.orderNumber}">VLR-000000</strong>
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- items -->
+                <tr>
+                    <td style="padding:16px 32px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                               style="border-collapse:collapse;">
+                            <tr th:each="item : ${order.items}">
+                                <td style="padding:10px 0; border-bottom:1px solid #eee; font-size:14px; color:#1c1c28;">
+                                    <span th:text="${item.nameFor(order.locale)}">اسم المنتج</span>
+                                    <span th:if="${item.variantSummary}" style="color:#888;"
+                                          th:text="' — ' + ${item.variantSummary}"> — التفاصيل</span>
+                                    <br/>
+                                    <span style="color:#888; font-size:12px;">
+                                        الكمية: <span th:text="${item.quantity}">1</span>
+                                    </span>
+                                </td>
+                                <td style="padding:10px 0; border-bottom:1px solid #eee; font-size:14px;
+                                           color:#1c1c28; text-align:left; white-space:nowrap;">
+                                    <span style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                          th:text="${item.lineTotalGross} + ' ' + ${order.currency}">0.00 EGP</span>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+
+                <!-- totals -->
+                <tr>
+                    <td style="padding:8px 32px 24px 32px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td style="padding:4px 0; font-size:13px; color:#555;">الشحن</td>
+                                <td style="padding:4px 0; font-size:13px; color:#555; text-align:left;">
+                                    <span style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                          th:text="${order.shippingCost} + ' ' + ${order.currency}">0.00 EGP</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding:8px 0; font-size:16px; font-weight:bold; color:#1c1c28;
+                                           border-top:2px solid #1c1c28;">الإجمالي</td>
+                                <td style="padding:8px 0; font-size:16px; font-weight:bold; color:#1c1c28;
+                                           text-align:left; border-top:2px solid #1c1c28;">
+                                    <span style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                          th:text="${order.grandTotal} + ' ' + ${order.currency}">0.00 EGP</span>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+
+                <!-- delivery address -->
+                <tr>
+                    <td style="padding:0 32px 28px 32px;">
+                        <div style="background-color:#f9f8f5; border-radius:6px; padding:16px;">
+                            <p style="margin:0 0 4px 0; font-size:13px; color:#888;">عنوان التوصيل</p>
+                            <p style="margin:0; font-size:14px; color:#1c1c28;" th:text="${order.formattedAddress()}">
+                                العنوان
+                            </p>
+                        </div>
+                    </td>
+                </tr>
+
+                <!-- footer -->
+                <tr>
+                    <td style="padding:20px 32px; background-color:#f9f8f5; text-align:center;">
+                        <p style="margin:0; font-size:12px; color:#999;">
+                            هذه رسالة تلقائية من فيلورا — من فضلك لا ترد عليها.
+                        </p>
+                    </td>
+                </tr>
+
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

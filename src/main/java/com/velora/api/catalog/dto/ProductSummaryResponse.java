@@ -14,6 +14,9 @@ public record ProductSummaryResponse(
         String categorySlug,
         String imageUrl,
         String imageAlt,
+        @Schema(description = "Second product image by displayOrder, for hover-swap. "
+                + "Null when the product has only one image.")
+        String hoverImageUrl,
         @Schema(description = "Lowest active variant price, tax-inclusive")
         BigDecimal minPrice,
         BigDecimal maxPrice,

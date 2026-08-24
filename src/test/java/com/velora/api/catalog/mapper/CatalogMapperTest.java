@@ -55,6 +55,40 @@ class CatalogMapperTest {
         assertThat(response.url()).isEqualTo("http://localhost:8080/uploads/" + KEY);
     }
 
+    @Test
+    @DisplayName("Single-image product has no hover image")
+    void singleImageProductHasNoHoverImage() {
+        Product product = productWithMainImage(KEY);
+
+        var summary = mapper.toSummary(product, "ar");
+
+        assertThat(summary.hoverImageUrl()).isNull();
+    }
+
+    @Test
+    @DisplayName("Second image by displayOrder resolves as the hover image")
+    void hoverImageIsTheSecondByDisplayOrder() {
+        String hoverKey = "products/2026/08/hover456.jpg";
+        Product product = productWithMainImage(KEY);
+        product.getImages().add(image(hoverKey, false));
+
+        var summary = mapper.toSummary(product, "ar");
+
+        assertThat(summary.hoverImageUrl()).isEqualTo("http://localhost:8080/uploads/" + hoverKey);
+    }
+
+    @Test
+    @DisplayName("A third image is never the hover image")
+    void aThirdImageIsIgnored() {
+        Product product = productWithMainImage(KEY);
+        product.getImages().add(image("products/2026/08/hover456.jpg", false));
+        product.getImages().add(image("products/2026/08/third789.jpg", false));
+
+        var summary = mapper.toSummary(product, "ar");
+
+        assertThat(summary.hoverImageUrl()).contains("hover456.jpg");
+    }
+
     private Product productWithMainImage(String key) {
         Product product = new Product();
         product.setSlug("classic-watch");

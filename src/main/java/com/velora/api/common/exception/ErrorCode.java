@@ -46,6 +46,7 @@ public enum ErrorCode {
     OTP_INVALID("The verification code is incorrect", HttpStatus.BAD_REQUEST),
     OTP_EXPIRED("The verification code has expired", HttpStatus.BAD_REQUEST),
     OTP_TOO_MANY_ATTEMPTS("Too many attempts. Request a new code", HttpStatus.TOO_MANY_REQUESTS),
+    RATE_LIMITED("Too many requests. Please try again later", HttpStatus.TOO_MANY_REQUESTS),
     TOKEN_EXPIRED("Session expired. Please sign in again", HttpStatus.UNAUTHORIZED),
     TOKEN_INVALID("Invalid authentication token", HttpStatus.UNAUTHORIZED),
 

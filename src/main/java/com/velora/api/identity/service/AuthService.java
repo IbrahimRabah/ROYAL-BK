@@ -2,6 +2,7 @@ package com.velora.api.identity.service;
 
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
+import com.velora.api.common.ratelimit.RateLimiter;
 import com.velora.api.common.util.PhoneNormalizer;
 import com.velora.api.identity.domain.AppUser;
 import com.velora.api.identity.domain.PasswordResetToken;
@@ -17,12 +18,14 @@ import com.velora.api.identity.repository.PasswordResetTokenRepository;
 import com.velora.api.identity.repository.RefreshTokenRepository;
 import com.velora.api.identity.repository.RoleRepository;
 import com.velora.api.identity.security.JwtService;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +49,11 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserMapper userMapper;
+    private final RateLimiter rateLimiter;
+
+    private final int loginMaxPerIp;
+    private final int loginMaxPerAccount;
+    private final Duration loginWindow;
 
     public AuthService(AppUserRepository userRepository,
                        RoleRepository roleRepository,
@@ -53,7 +61,11 @@ public class AuthService {
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
-                       UserMapper userMapper) {
+                       UserMapper userMapper,
+                       RateLimiter rateLimiter,
+                       @Value("${velora.rate-limit.login.max-per-ip}") int loginMaxPerIp,
+                       @Value("${velora.rate-limit.login.max-per-account}") int loginMaxPerAccount,
+                       @Value("${velora.rate-limit.login.window-minutes}") long loginWindowMinutes) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -61,6 +73,10 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.userMapper = userMapper;
+        this.rateLimiter = rateLimiter;
+        this.loginMaxPerIp = loginMaxPerIp;
+        this.loginMaxPerAccount = loginMaxPerAccount;
+        this.loginWindow = Duration.ofMinutes(loginWindowMinutes);
     }
 
     // ------------------------------------------------------------------ register
@@ -104,9 +120,26 @@ public class AuthService {
 
     // --------------------------------------------------------------------- login
 
+    /**
+     * Two independent limits, both checked before the password is even compared:
+     * one keyed by IP (an attacker spraying many accounts from one machine), one
+     * keyed by the account itself (credential stuffing against one target,
+     * rotating IPs to dodge the first limit). Either one tripping is enough to
+     * refuse the request — this is deliberately stricter than either alone.
+     */
     @Transactional
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, String clientIp) {
+        if (!rateLimiter.tryAcquire("login:ip:" + clientIp, loginMaxPerIp, loginWindow)) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED,
+                    "Too many login attempts from this network. Try again later");
+        }
+
         String identifier = resolveIdentifier(request.identifier());
+
+        if (!rateLimiter.tryAcquire("login:account:" + identifier, loginMaxPerAccount, loginWindow)) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED,
+                    "Too many login attempts for this account. Try again later");
+        }
 
         AppUser user = userRepository.findByEmailOrPhone(identifier)
                 // Same error whether the account is missing or the password is wrong,

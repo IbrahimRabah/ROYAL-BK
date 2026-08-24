@@ -146,4 +146,12 @@ public class Product extends BaseAuditEntity {
                 .findFirst()
                 .orElseGet(() -> images.isEmpty() ? null : images.get(0));
     }
+
+    /**
+     * The second image by {@code displayOrder} — what a product card swaps to on
+     * hover. Null when the product has zero or one image, not the main image again.
+     */
+    public ProductImage hoverImage() {
+        return images.size() > 1 ? images.get(1) : null;
+    }
 }

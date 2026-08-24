@@ -25,6 +25,7 @@ import com.velora.api.order.domain.PaymentMethod;
 import com.velora.api.order.domain.PaymentStatus;
 import com.velora.api.order.domain.StatusKind;
 import com.velora.api.order.dto.PlaceOrderRequest;
+import com.velora.api.order.event.OrderPlacedEvent;
 import com.velora.api.order.repository.OrderRepository;
 import com.velora.api.order.repository.OrderStatusHistoryRepository;
 import com.velora.api.shipping.domain.Governorate;
@@ -39,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,6 +77,7 @@ public class CheckoutService {
     private final OrderStatusHistoryRepository historyRepository;
     private final OrderNumberGenerator orderNumberGenerator;
     private final StorageService storageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CheckoutService(CartService cartService,
                            ReservationService reservationService,
@@ -86,7 +89,8 @@ public class CheckoutService {
                            OrderRepository orderRepository,
                            OrderStatusHistoryRepository historyRepository,
                            OrderNumberGenerator orderNumberGenerator,
-                           StorageService storageService) {
+                           StorageService storageService,
+                           ApplicationEventPublisher eventPublisher) {
         this.cartService = cartService;
         this.reservationService = reservationService;
         this.shippingService = shippingService;
@@ -98,6 +102,7 @@ public class CheckoutService {
         this.historyRepository = historyRepository;
         this.orderNumberGenerator = orderNumberGenerator;
         this.storageService = storageService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -150,16 +155,18 @@ public class CheckoutService {
         Totals totals = calculateTotals(lines, rate);
 
         // 7. The order, with everything copied.
+        AppUser customer = userId == null ? null : userRepository.findById(userId).orElse(null);
+
         CustomerOrder order = new CustomerOrder();
         order.setOrderNumber(orderNumberGenerator.generate());
-        order.setCustomer(userId == null ? null : userRepository.findById(userId).orElse(null));
+        order.setCustomer(customer);
         order.setPaymentMethod(resolvePaymentMethod(request.paymentMethod()));
         order.setFulfillmentStatus(FulfillmentStatus.PENDING);
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setLocale(locale);
         order.setCustomerNote(request.customerNote());
 
-        applyContactAndAddress(order, address, governorate);
+        applyContactAndAddress(order, address, governorate, customer);
 
         order.setShippingZoneName(rate.getZone().nameFor(locale));
         order.setDeliveryDaysMin(rate.getDeliveryDaysMin());
@@ -189,9 +196,11 @@ public class CheckoutService {
                 saved.getGrandTotal(), saved.getCurrency(),
                 saved.getPaymentMethod(), saved.getShipGovernorateName());
 
-        // TODO(notification module): publish OrderPlacedEvent so the SMS is sent
-        // AFTER_COMMIT — never inside this transaction, or a rolled-back order
-        // still texts the customer.
+        // AFTER_COMMIT only — OrderConfirmationListener is
+        // @TransactionalEventListener(phase = AFTER_COMMIT), so the email fires
+        // once this transaction actually commits, never for an order that rolls
+        // back afterward.
+        eventPublisher.publishEvent(new OrderPlacedEvent(saved.getId()));
 
         return saved;
     }
@@ -351,11 +360,19 @@ public class CheckoutService {
     }
 
     private void applyContactAndAddress(CustomerOrder order, AddressSnapshot address,
-                                        Governorate governorate) {
+                                        Governorate governorate, AppUser customer) {
         order.setContactName(address.recipientName());
         order.setContactPhone(address.phone());
         order.setContactAltPhone(address.altPhone());
-        order.setContactEmail(address.email());
+        /*
+         * A saved address (CustomerAddress) has no email column at all — only the
+         * inline guest/one-off address input does. Without this fallback, the order
+         * confirmation email would never send for the most common path: a signed-in
+         * customer checking out with a saved address. Email is optional at
+         * registration, so this can still legitimately be null.
+         */
+        order.setContactEmail(address.email() != null ? address.email()
+                : customer == null ? null : customer.getEmail());
 
         order.setShipGovernorate(governorate);
         order.setShipGovernorateName(governorate.getNameAr());

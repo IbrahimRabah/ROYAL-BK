@@ -385,6 +385,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
       "categorySlug": "watches",
       "imageUrl": "https://cdn.velora.com/products/101/main.jpg",
       "imageAlt": "Classic Gold Watch",
+      "hoverImageUrl": "https://cdn.velora.com/products/101/angle.jpg",
       "minPrice": "4599.0000",
       "maxPrice": "5299.0000",
       "compareAtPrice": "5999.0000",

@@ -33,6 +33,8 @@ import com.velora.api.order.service.OrderService;
 import com.velora.api.shipping.domain.Governorate;
 import com.velora.api.shipping.repository.GovernorateRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,12 +98,30 @@ class PurchaseJourneyIntegrationTest {
     private Long governorateId;
     private String guestToken;
 
+    private int currentFiscalYear;
+    private Integer invoiceSequenceBaseline;
+
     // ------------------------------------------------------------------- setup
 
     @BeforeEach
     void createSellableProduct() {
         guestToken = GUEST_TOKEN_PREFIX + UUID.randomUUID();
         String unique = UUID.randomUUID().toString().substring(0, 8);
+
+        /*
+         * Invoice numbers are gapless by design (InvoiceService — a real accounting
+         * requirement), which means issuing one here for a test order permanently
+         * burns a number: the invoice row gets deleted below, but nothing decrements
+         * invoice_sequence.last_number to match. Every test run that reaches
+         * DELIVERED pushes the sequence further ahead of the real invoice count,
+         * forever. Captured here and restored in tearDown() so this test leaves the
+         * sequence exactly as it found it.
+         */
+        currentFiscalYear = LocalDate.now().getYear();
+        List<Integer> existing = jdbc.query(
+                "SELECT last_number FROM invoice_sequence WHERE fiscal_year = ?",
+                (rs, rowNum) -> rs.getInt("last_number"), currentFiscalYear);
+        invoiceSequenceBaseline = existing.isEmpty() ? null : existing.get(0);
 
         transactionTemplate.executeWithoutResult(status -> {
             Category category = new Category();
@@ -166,6 +186,15 @@ class PurchaseJourneyIntegrationTest {
         jdbc.update("DELETE FROM product WHERE id = ?", productId);
         jdbc.update("DELETE FROM category_translation WHERE category_id = ?", categoryId);
         jdbc.update("DELETE FROM category WHERE id = ?", categoryId);
+
+        // Restore the sequence to what this test found it at — see the comment in
+        // createSellableProduct(). Guarded to only ever move it down, never up, in
+        // case something else advanced it concurrently.
+        if (invoiceSequenceBaseline != null) {
+            jdbc.update("UPDATE invoice_sequence SET last_number = ? "
+                            + "WHERE fiscal_year = ? AND last_number > ?",
+                    invoiceSequenceBaseline, currentFiscalYear, invoiceSequenceBaseline);
+        }
     }
 
     // ------------------------------------------------------------------- tests

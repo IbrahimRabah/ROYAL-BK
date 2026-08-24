@@ -49,6 +49,7 @@ public class CatalogMapper {
 
     public ProductSummaryResponse toSummary(Product product, String locale) {
         ProductImage main = product.mainImage();
+        ProductImage hover = product.hoverImage();
         ProductVariant cheapest = cheapestVariant(product);
 
         return new ProductSummaryResponse(
@@ -60,6 +61,7 @@ public class CatalogMapper {
                 product.getCategory() == null ? null : product.getCategory().getSlug(),
                 main == null ? null : storageService.urlFor(main.getUrl()),
                 main == null ? null : main.altFor(locale),
+                hover == null ? null : storageService.urlFor(hover.getUrl()),
                 product.getMinPrice(),
                 product.getMaxPrice(),
                 cheapest == null ? null : cheapest.getCompareAtPrice(),

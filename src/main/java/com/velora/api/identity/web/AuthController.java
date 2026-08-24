@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -62,8 +63,9 @@ public class AuthController {
             @ApiResponse(responseCode = "403", description = "Account suspended")
     })
     @PostMapping("/login")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
+    public AuthResponse login(@Valid @RequestBody LoginRequest request,
+                              HttpServletRequest httpRequest) {
+        return authService.login(request, httpRequest.getRemoteAddr());
     }
 
     @Operation(summary = "Exchange a refresh token for a new access token",
@@ -102,9 +104,10 @@ public class AuthController {
 
     @Operation(summary = "Send a one-time code", security = {})
     @PostMapping("/otp/send")
-    public MessageResponse sendOtp(@Valid @RequestBody OtpSendRequest request) {
+    public MessageResponse sendOtp(@Valid @RequestBody OtpSendRequest request,
+                                   HttpServletRequest httpRequest) {
         // The code is returned to the notification module, never to the caller.
-        otpService.send(request.destination(), request.purpose());
+        otpService.send(request.destination(), request.purpose(), httpRequest.getRemoteAddr());
         return MessageResponse.of("A verification code has been sent");
     }
 

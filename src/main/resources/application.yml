@@ -30,10 +30,39 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  # Gmail SMTP, 500 messages/day free — enough to start. MAIL_USERNAME is the
+  # Gmail address; MAIL_PASSWORD is a 16-character Gmail App Password, not the
+  # account password (Google account settings -> Security -> App passwords —
+  # requires 2-Step Verification to be on).
+  # Both default to empty so a dev box without Gmail credentials still boots —
+  # MailService.sendHtml() catches and logs a send failure rather than
+  # propagating it, so checkout is never blocked by a missing/invalid mail setup.
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+        transport:
+          protocol: smtp
+
 server:
   port: 8080
   error:
     include-message: always
+
+management:
+  health:
+    # A Gmail outage or missing credentials must not fail liveness/readiness —
+    # MailService already swallows send failures rather than blocking checkout,
+    # so the health indicator agreeing with that is the actual contract.
+    mail:
+      enabled: false
 
 springdoc:
   swagger-ui:
@@ -62,6 +91,20 @@ velora:
     accept-legacy-unsigned: true
   cors:
     allowed-origins: http://localhost:*,http://127.0.0.1:*,http://192.168.*:*
+  rate-limit:
+    login:
+      # Two independent checks, both must pass. Per-IP catches one attacker
+      # spraying many accounts; per-account catches credential stuffing against
+      # one target that rotates IPs to dodge the first check.
+      max-per-ip: 10
+      max-per-account: 5
+      window-minutes: 15
+    otp-send:
+      # The per-destination cap (5/hour) already lived in OtpService — this adds
+      # the per-IP half, so one machine cannot request codes for many different
+      # numbers/emails in a row.
+      max-per-ip: 10
+      window-minutes: 60
   business:
     reservation-ttl-minutes: 20
     default-tax-rate: 0.14
