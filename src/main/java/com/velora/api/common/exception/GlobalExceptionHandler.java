@@ -116,6 +116,23 @@ public class GlobalExceptionHandler {
                 "Required parameter '%s' is missing".formatted(ex.getParameterName()), request);
     }
 
+    /**
+     * The safety net for {@code Enum.valueOf()} (or any other input parsing) called
+     * directly in application code instead of through a typed {@code @RequestParam} —
+     * that path throws a bare {@code IllegalArgumentException} that skips Spring MVC's
+     * own binding machinery entirely, so {@link #handleTypeMismatch} never sees it and
+     * it used to fall all the way through to {@link #handleUnexpected} as a 500.
+     * {@link com.velora.api.common.util.EnumParam} is the preferred fix at the call
+     * site — it names the field and lists valid values — this handler exists for
+     * whatever the next call site misses.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex,
+                                               HttpServletRequest request) {
+        log.warn("Invalid argument on {}: {}", request.getRequestURI(), ex.getMessage());
+        return build(ErrorCode.INVALID_PARAMETER, ex.getMessage(), request);
+    }
+
     // ---------------------------------------------------------------- database
 
     /**

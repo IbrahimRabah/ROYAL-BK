@@ -19,6 +19,15 @@ import org.springframework.stereotype.Repository;
  * <p>Plain SQL because these join users to orders and group — a shape that belongs to
  * no entity. Expressing it through JPA would mean either a projection interface per
  * query or loading every order into memory to count them.
+ *
+ * <p>Every DATETIMEOFFSET column is read with {@code rs.getObject(column,
+ * OffsetDateTime.class)}, never the untyped {@code rs.getObject(column)}: the driver's
+ * untyped return is its own {@code microsoft.sql.DateTimeOffset}, not
+ * {@code java.time.OffsetDateTime}, and a previous {@code toString()}-and-parse
+ * conversion of that type broke on every non-null row (its format has a space before
+ * the offset too, so a blind {@code replace(" ", "T")} produced an unparseable
+ * string) — every customer with a placed order 500'd on both the list and detail
+ * endpoint. The typed overload asks the driver to do the conversion itself.
  */
 @Repository
 public class CustomerQueries {
@@ -102,8 +111,8 @@ public class CustomerQueries {
                         rs.getObject("phone_verified_at") != null,
                         rs.getInt("order_count"),
                         rs.getBigDecimal("total_spent"),
-                        toOffset(rs.getObject("last_order_at")),
-                        toOffset(rs.getObject("created_at")),
+                        rs.getObject("last_order_at", OffsetDateTime.class),
+                        rs.getObject("created_at", OffsetDateTime.class),
                         rs.getString("status")),
                 pagedParams.toArray());
 
@@ -139,8 +148,8 @@ public class CustomerQueries {
                         rs.getInt("failed_orders"),
                         rs.getInt("cancelled_orders"),
                         rs.getBigDecimal("total_spent"),
-                        toOffset(rs.getObject("first_order_at")),
-                        toOffset(rs.getObject("last_order_at"))),
+                        rs.getObject("first_order_at", OffsetDateTime.class),
+                        rs.getObject("last_order_at", OffsetDateTime.class)),
                 customerId);
     }
 
@@ -162,7 +171,7 @@ public class CustomerQueries {
                         rs.getString("payment_status"),
                         rs.getBigDecimal("grand_total"),
                         rs.getInt("item_count"),
-                        toOffset(rs.getObject("placed_at"))),
+                        rs.getObject("placed_at", OffsetDateTime.class)),
                 limit, customerId);
     }
 
@@ -171,23 +180,6 @@ public class CustomerQueries {
     private String fullName(String first, String last) {
         String name = ((first == null ? "" : first) + " " + (last == null ? "" : last)).trim();
         return name.isEmpty() ? "—" : name;
-    }
-
-    /**
-     * SQL Server returns DATETIMEOFFSET as a driver-specific type, so it is converted
-     * here rather than cast blindly.
-     */
-    private OffsetDateTime toOffset(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof OffsetDateTime offset) {
-            return offset;
-        }
-        if (value instanceof java.sql.Timestamp timestamp) {
-            return timestamp.toInstant().atOffset(java.time.ZoneOffset.UTC);
-        }
-        return OffsetDateTime.parse(value.toString().replace(" ", "T"));
     }
 
     /** One customer's purchase history, aggregated. */

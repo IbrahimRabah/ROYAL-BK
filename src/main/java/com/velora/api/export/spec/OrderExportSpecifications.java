@@ -1,5 +1,6 @@
 package com.velora.api.export.spec;
 
+import com.velora.api.common.util.EnumParam;
 import com.velora.api.order.domain.CustomerOrder;
 import com.velora.api.order.domain.FulfillmentStatus;
 import com.velora.api.order.domain.PaymentStatus;
@@ -40,7 +41,7 @@ public final class OrderExportSpecifications {
         if (raw == null || raw.isBlank()) {
             return alwaysTrue();
         }
-        FulfillmentStatus status = FulfillmentStatus.valueOf(raw.toUpperCase());
+        FulfillmentStatus status = EnumParam.parse(FulfillmentStatus.class, raw, "fulfillmentStatus");
         return (root, query, cb) -> cb.equal(root.get("fulfillmentStatus"), status);
     }
 
@@ -48,7 +49,7 @@ public final class OrderExportSpecifications {
         if (raw == null || raw.isBlank()) {
             return alwaysTrue();
         }
-        PaymentStatus status = PaymentStatus.valueOf(raw.toUpperCase());
+        PaymentStatus status = EnumParam.parse(PaymentStatus.class, raw, "paymentStatus");
         return (root, query, cb) -> cb.equal(root.get("paymentStatus"), status);
     }
 

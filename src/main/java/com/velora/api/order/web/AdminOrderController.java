@@ -2,6 +2,7 @@ package com.velora.api.order.web;
 
 import com.velora.api.catalog.web.LocaleResolver;
 import com.velora.api.common.dto.PageResponse;
+import com.velora.api.common.util.EnumParam;
 import com.velora.api.identity.security.UserPrincipal;
 import com.velora.api.order.domain.PaymentStatus;
 import com.velora.api.order.dto.CancelOrderRequest;
@@ -106,7 +107,7 @@ public class AdminOrderController {
                                   HttpServletRequest request) {
 
         return orderService.changePaymentStatus(orderId,
-                PaymentStatus.valueOf(status.toUpperCase()), note, principal.id(),
+                EnumParam.parse(PaymentStatus.class, status, "status"), note, principal.id(),
                 LocaleResolver.resolve(request));
     }
 

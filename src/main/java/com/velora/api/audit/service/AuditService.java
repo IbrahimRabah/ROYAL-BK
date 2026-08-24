@@ -5,6 +5,7 @@ import com.velora.api.audit.domain.AuditLog;
 import com.velora.api.audit.dto.AuditLogResponse;
 import com.velora.api.audit.repository.AuditLogRepository;
 import com.velora.api.common.dto.PageResponse;
+import com.velora.api.common.util.EnumParam;
 import com.velora.api.identity.repository.AppUserRepository;
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -91,7 +92,7 @@ public class AuditService {
                     entityType, entityId, pageable);
         } else if (action != null && !action.isBlank()) {
             page = auditLogRepository.findByActionOrderByCreatedAtDesc(
-                    AuditAction.valueOf(action.toUpperCase()), pageable);
+                    EnumParam.parse(AuditAction.class, action, "action"), pageable);
         } else if (actorId != null) {
             page = auditLogRepository.findByActorIdOrderByCreatedAtDesc(actorId, pageable);
         } else {

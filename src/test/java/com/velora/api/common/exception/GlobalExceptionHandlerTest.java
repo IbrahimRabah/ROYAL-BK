@@ -92,6 +92,25 @@ class GlobalExceptionHandlerTest {
         assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     }
 
+    /**
+     * {@code IllegalArgumentException} — the exception {@code Enum.valueOf()} throws
+     * — used to have no explicit mapping here, so it fell through to the generic
+     * {@code Exception} handler and came back as a 500 with no useful detail. This
+     * is the safety net for that: everything that reaches this handler is a 400 that
+     * at least echoes the exception's own message, never a blank "unexpected error".
+     */
+    @Test
+    @DisplayName("IllegalArgumentException becomes a 400 INVALID_PARAMETER, not a 500")
+    void illegalArgumentBecomesFourHundred() {
+        ProblemDetail problem = handler.handleIllegalArgument(
+                new IllegalArgumentException("No enum constant ...AuditAction.BOGUS"),
+                requestTo("/api/v1/admin/audit-log"));
+
+        assertThat(problem.getProperties().get("code")).isEqualTo("INVALID_PARAMETER");
+        assertThat(problem.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(problem.getDetail()).contains("BOGUS");
+    }
+
     private HttpServletRequest requestTo(String uri) {
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRequestURI()).thenReturn(uri);
