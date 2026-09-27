@@ -5,7 +5,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
-@Schema(description = "Create or update a category")
+@Schema(description = "Create or update a category. Images are not set here — "
+        + "upload them with POST /admin/categories/{id}/images.")
 public record CategorySaveRequest(
 
         Long parentId,
@@ -15,10 +16,6 @@ public record CategorySaveRequest(
         @NotEmpty(message = "At least one translation is required")
         @Valid
         List<TranslationRequest> translations,
-
-        String imageUrl,
-
-        String bannerUrl,
 
         Integer displayOrder,
 

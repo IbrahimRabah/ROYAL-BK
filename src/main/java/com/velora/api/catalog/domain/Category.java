@@ -43,9 +43,11 @@ public class Category {
     @Column(name = "slug", nullable = false, length = 150)
     private String slug;
 
+    /** Storage key (not a URL) for the {@code CARD} image — see {@code StorageService}. */
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    /** Storage key (not a URL) for the {@code BANNER} image — see {@code StorageService}. */
     @Column(name = "banner_url", length = 500)
     private String bannerUrl;
 

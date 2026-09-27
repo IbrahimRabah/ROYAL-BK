@@ -524,15 +524,17 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 #### `GET /api/v1/categories/tree`
 **Summary:** Full category tree for the header mega-menu, built recursively from one flat query (max depth guard: 5 levels).
 
+`imageUrl`/`bannerUrl` are built at read time from the uploaded image's storage key (see `POST /admin/categories/{id}/images` below) — `null` when no image of that type has been uploaded yet.
+
 **Success response `200`:**
 ```json
 [
   {
     "id": 1, "slug": "watches", "name": "ساعات",
-    "imageUrl": "https://cdn.velora.com/categories/1/image.jpg", "bannerUrl": "https://cdn.velora.com/categories/1/banner.jpg",
+    "imageUrl": "http://localhost:8080/uploads/categories/2026/09/3f2a1b9c8e7d4a5b.jpg", "bannerUrl": "http://localhost:8080/uploads/categories/2026/09/9e1d4a5b3f2a1b9c.jpg",
     "displayOrder": 1,
     "children": [
-      { "id": 4, "slug": "mens-watches", "name": "ساعات رجالية", "imageUrl": "https://cdn.velora.com/categories/4/image.jpg", "bannerUrl": null, "displayOrder": 1, "children": [] }
+      { "id": 4, "slug": "mens-watches", "name": "ساعات رجالية", "imageUrl": "http://localhost:8080/uploads/categories/2026/09/a5b3f2a1b9c8e7d4.jpg", "bannerUrl": null, "displayOrder": 1, "children": [] }
     ]
   }
 ]
@@ -548,8 +550,8 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 {
   "id": 1, "slug": "watches", "name": "ساعات",
   "description": "تشكيلة واسعة من الساعات الفاخرة.",
-  "imageUrl": "https://cdn.velora.com/categories/1/image.jpg", "bannerUrl": "https://cdn.velora.com/categories/1/banner.jpg",
-  "children": [ { "id": 4, "slug": "mens-watches", "name": "ساعات رجالية", "imageUrl": "https://cdn.velora.com/categories/4/image.jpg", "bannerUrl": null, "displayOrder": 1, "children": [] } ],
+  "imageUrl": "http://localhost:8080/uploads/categories/2026/09/3f2a1b9c8e7d4a5b.jpg", "bannerUrl": "http://localhost:8080/uploads/categories/2026/09/9e1d4a5b3f2a1b9c.jpg",
+  "children": [ { "id": 4, "slug": "mens-watches", "name": "ساعات رجالية", "imageUrl": "http://localhost:8080/uploads/categories/2026/09/a5b3f2a1b9c8e7d4.jpg", "bannerUrl": null, "displayOrder": 1, "children": [] } ],
   "breadcrumb": [ { "id": 1, "slug": "watches", "name": "ساعات" } ],
   "metaTitle": "ساعات فاخرة | Velora",
   "metaDescription": "تسوق أحدث تشكيلة من الساعات الفاخرة."
@@ -864,23 +866,24 @@ Two independent warnings can appear: `"The selection produces %d combinations. S
 ```json
 [
   {
-    "id": 1, "slug": "watches", "name": "ساعات",
-    "imageUrl": "https://cdn.velora.com/categories/1/image.jpg", "bannerUrl": "https://cdn.velora.com/categories/1/banner.jpg",
-    "displayOrder": 1,
+    "id": 1, "slug": "watches",
+    "translations": [ { "locale": "ar", "name": "ساعات", "description": null, "metaTitle": null, "metaDescription": null } ],
+    "imageUrl": "http://localhost:8080/uploads/categories/2026/09/3f2a1b9c8e7d4a5b.jpg", "bannerUrl": "http://localhost:8080/uploads/categories/2026/09/9e1d4a5b3f2a1b9c.jpg",
+    "displayOrder": 1, "active": true, "productCount": 42,
     "children": [
-      { "id": 4, "slug": "discontinued-line", "name": "خط موقوف", "imageUrl": null, "bannerUrl": null, "displayOrder": 1, "children": [] }
+      { "id": 4, "slug": "discontinued-line", "translations": [ { "locale": "ar", "name": "خط موقوف", "description": null, "metaTitle": null, "metaDescription": null } ], "imageUrl": null, "bannerUrl": null, "displayOrder": 1, "active": false, "productCount": 0, "children": [] }
     ]
   }
 ]
 ```
-An inactive category appears here exactly like an active one (including inside `children`) — there is no `active` field on the DTO to distinguish them; staff cross-reference against `PUT /api/v1/admin/categories/{id}` to see or change the flag.
+Unlike the storefront tree, every node carries `active` and the full `translations[]`, since `PUT /api/v1/admin/categories/{id}` replaces them wholesale.
 
 **Error responses:** none beyond the global conventions.
 
 ---
 
 #### `POST /api/v1/admin/categories`
-**Summary:** Create a category. Slug is auto-generated (de-duplicated with a numeric suffix) from `slug` or the first translation's name.
+**Summary:** Create a category. Slug is auto-generated (de-duplicated with a numeric suffix) from `slug` or the first translation's name. Images are not set here — upload them afterwards with `POST /api/v1/admin/categories/{id}/images`.
 
 **Request body:**
 ```json
@@ -890,7 +893,7 @@ An inactive category appears here exactly like an active one (including inside `
     { "locale": "ar", "name": "ساعات رجالية", "shortDescription": null, "description": null, "metaTitle": null, "metaDescription": null },
     { "locale": "en", "name": "Men's Watches", "shortDescription": null, "description": null, "metaTitle": null, "metaDescription": null }
   ],
-  "imageUrl": "https://cdn.velora.com/categories/mens-watches.jpg", "bannerUrl": null, "displayOrder": 1, "active": true
+  "displayOrder": 1, "active": true
 }
 ```
 
@@ -916,6 +919,43 @@ An inactive category appears here exactly like an active one (including inside `
 **Error responses:** `404 CATEGORY_NOT_FOUND`, `400 CATEGORY_CYCLE` (`parentId` equals own id), `409 SLUG_ALREADY_EXISTS`.
 
 > `409 CATEGORY_NOT_EMPTY` exists in the error catalog for blocking removal of a non-empty category, but no delete endpoint is exposed here — categories are only created/updated.
+
+---
+
+#### `POST /api/v1/admin/categories/{id}/images`
+**Summary:** Upload (or replace) the `CARD` or `BANNER` image for a category. Each type holds exactly one image — uploading again with the same `imageType` deletes the old file and replaces it, it does not add a second image. Multipart, JPEG/PNG/WebP/AVIF up to 5 MB, same limits as product images.
+
+**Request:** `multipart/form-data`
+- `file` — the image
+- `imageType` (query param) — `CARD` or `BANNER`
+
+```
+POST /api/v1/admin/categories/12/images?imageType=CARD
+Content-Type: multipart/form-data; boundary=...
+```
+
+**Success response `200`:** the full updated category (same shape as one node of `GET /api/v1/admin/categories`), so the admin UI can show the new image immediately without a second call.
+```json
+{
+  "id": 12, "slug": "mens-watches",
+  "translations": [ "..." ],
+  "imageUrl": "http://localhost:8080/uploads/categories/2026/09/a5b3f2a1b9c8e7d4.jpg", "bannerUrl": null,
+  "displayOrder": 1, "active": true, "productCount": 0, "children": []
+}
+```
+
+**Error responses:** `404 CATEGORY_NOT_FOUND`, `400 VALIDATION_FAILED` (file too large, empty, or not an accepted image type), `400 INVALID_PARAMETER` (`imageType` is neither `CARD` nor `BANNER`).
+
+---
+
+#### `DELETE /api/v1/admin/categories/{id}/images/{imageType}`
+**Summary:** Removes the `CARD` or `BANNER` image — the column reverts to `null` (so the storefront hides the element instead of showing a broken image) and the stored file is deleted.
+
+**Success response:** `204 No Content`.
+
+**Error responses:** `404 CATEGORY_NOT_FOUND`, `400 INVALID_PARAMETER` (`imageType` is neither `CARD` nor `BANNER`).
+
+> Out of scope by design: the storefront's "New Arrivals" promo image is a marketing banner, not a category attribute — it changes with campaigns and stays in the front end's `assets` folder until a dedicated promotional-banner system exists.
 
 ---
 

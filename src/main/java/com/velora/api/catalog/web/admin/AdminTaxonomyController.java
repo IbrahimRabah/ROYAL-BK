@@ -1,5 +1,6 @@
 package com.velora.api.catalog.web.admin;
 
+import com.velora.api.catalog.domain.CategoryImageType;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
 import com.velora.api.catalog.dto.admin.BrandAdminResponse;
@@ -14,7 +15,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,7 +25,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "Admin — Taxonomy",
         description = "Categories, brands and attributes. Requires ROLE_ADMIN.")
@@ -60,6 +65,27 @@ public class AdminTaxonomyController {
     public Map<String, Long> updateCategory(@PathVariable Long id,
                                             @Valid @RequestBody CategorySaveRequest request) {
         return Map.of("id", taxonomyService.updateCategory(id, request));
+    }
+
+    @Operation(summary = "Upload a category image",
+            description = "JPEG, PNG, WebP or AVIF, up to 5 MB. CARD is the card image "
+                    + "shown on the homepage and category listings; BANNER is the "
+                    + "category page header. Each type holds exactly one image — "
+                    + "uploading again replaces it. Returns the full category, so the "
+                    + "UI can show the new image without a second call.")
+    @PostMapping(value = "/categories/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public CategoryAdminResponse uploadCategoryImage(@PathVariable Long id,
+                                                     @RequestPart("file") MultipartFile file,
+                                                     @RequestParam CategoryImageType imageType) {
+        return taxonomyService.uploadCategoryImage(id, imageType, file);
+    }
+
+    @Operation(summary = "Delete a category image")
+    @DeleteMapping("/categories/{id}/images/{imageType}")
+    public ResponseEntity<Void> deleteCategoryImage(@PathVariable Long id,
+                                                    @PathVariable CategoryImageType imageType) {
+        taxonomyService.deleteCategoryImage(id, imageType);
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "List all brands",

@@ -2,12 +2,14 @@ package com.velora.api.catalog.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductImage;
 import com.velora.api.catalog.domain.ProductTranslation;
 import com.velora.api.common.storage.LocalStorageService;
 import com.velora.api.common.storage.StorageProperties;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -87,6 +89,34 @@ class CatalogMapperTest {
         var summary = mapper.toSummary(product, "ar");
 
         assertThat(summary.hoverImageUrl()).contains("hover456.jpg");
+    }
+
+    @Test
+    @DisplayName("Category tree node resolves stored image/banner keys to full URLs")
+    void treeNodeImageUrlsAreAbsolute() {
+        Category category = new Category();
+        category.setSlug("mens-watches");
+        category.setImageUrl("categories/2026/09/card123.jpg");
+        category.setBannerUrl("categories/2026/09/banner456.jpg");
+
+        var node = mapper.toTreeNode(category, "ar", List.of());
+
+        assertThat(node.imageUrl())
+                .isEqualTo("http://localhost:8080/uploads/categories/2026/09/card123.jpg");
+        assertThat(node.bannerUrl())
+                .isEqualTo("http://localhost:8080/uploads/categories/2026/09/banner456.jpg");
+    }
+
+    @Test
+    @DisplayName("Category tree node has null image/banner when no key is stored")
+    void treeNodeImageUrlsAreNullWhenNoImageUploaded() {
+        Category category = new Category();
+        category.setSlug("new-category");
+
+        var node = mapper.toTreeNode(category, "ar", List.of());
+
+        assertThat(node.imageUrl()).isNull();
+        assertThat(node.bannerUrl()).isNull();
     }
 
     private Product productWithMainImage(String key) {

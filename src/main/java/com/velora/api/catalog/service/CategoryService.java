@@ -8,6 +8,7 @@ import com.velora.api.catalog.mapper.CatalogMapper;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
+import com.velora.api.common.storage.StorageService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,10 +23,13 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final CatalogMapper mapper;
+    private final StorageService storageService;
 
-    public CategoryService(CategoryRepository categoryRepository, CatalogMapper mapper) {
+    public CategoryService(CategoryRepository categoryRepository, CatalogMapper mapper,
+                           StorageService storageService) {
         this.categoryRepository = categoryRepository;
         this.mapper = mapper;
+        this.storageService = storageService;
     }
 
     /**
@@ -67,8 +71,8 @@ public class CategoryService {
                 category.getSlug(),
                 category.nameFor(locale),
                 translation == null ? null : translation.getDescription(),
-                category.getImageUrl(),
-                category.getBannerUrl(),
+                storageService.urlFor(category.getImageUrl()),
+                storageService.urlFor(category.getBannerUrl()),
                 category.getProductCount() == null ? 0 : category.getProductCount(),
                 children,
                 mapper.buildBreadcrumb(category, locale),

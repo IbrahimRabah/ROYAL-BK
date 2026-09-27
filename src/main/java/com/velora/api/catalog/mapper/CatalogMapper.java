@@ -249,8 +249,8 @@ public class CatalogMapper {
                 category.getId(),
                 category.getSlug(),
                 category.nameFor(locale),
-                category.getImageUrl(),
-                category.getBannerUrl(),
+                storageService.urlFor(category.getImageUrl()),
+                storageService.urlFor(category.getBannerUrl()),
                 category.getDisplayOrder(),
                 category.getProductCount() == null ? 0 : category.getProductCount(),
                 children);

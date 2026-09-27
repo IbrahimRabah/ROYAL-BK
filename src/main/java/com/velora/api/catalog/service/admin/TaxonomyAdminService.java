@@ -7,6 +7,7 @@ import com.velora.api.catalog.domain.AttributeValue;
 import com.velora.api.catalog.domain.AttributeValueTranslation;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.CategoryImageType;
 import com.velora.api.catalog.domain.CategoryTranslation;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
@@ -21,6 +22,8 @@ import com.velora.api.catalog.repository.BrandRepository;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
+import com.velora.api.common.storage.StorageService;
+import com.velora.api.common.storage.StoredFile;
 import com.velora.api.common.util.SlugGenerator;
 import java.util.Comparator;
 import java.util.List;
@@ -31,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Categories, brands and attributes — the structures products hang off.
@@ -47,13 +51,16 @@ public class TaxonomyAdminService {
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final AttributeRepository attributeRepository;
+    private final StorageService storageService;
 
     public TaxonomyAdminService(CategoryRepository categoryRepository,
                                 BrandRepository brandRepository,
-                                AttributeRepository attributeRepository) {
+                                AttributeRepository attributeRepository,
+                                StorageService storageService) {
         this.categoryRepository = categoryRepository;
         this.brandRepository = brandRepository;
         this.attributeRepository = attributeRepository;
+        this.storageService = storageService;
     }
 
     // ------------------------------------------------------------------- reads
@@ -147,8 +154,8 @@ public class TaxonomyAdminService {
                 category.getSlug(),
                 category.getParent() == null ? null : category.getParent().getId(),
                 translations,
-                category.getImageUrl(),
-                category.getBannerUrl(),
+                storageService.urlFor(category.getImageUrl()),
+                storageService.urlFor(category.getBannerUrl()),
                 category.getDisplayOrder(),
                 category.isActive(),
                 category.getProductCount() == null ? 0 : category.getProductCount(),
@@ -239,8 +246,6 @@ public class TaxonomyAdminService {
                     s -> !categoryRepository.existsBySlug(s)));
         }
 
-        category.setImageUrl(request.imageUrl());
-        category.setBannerUrl(request.bannerUrl());
         if (request.displayOrder() != null) {
             category.setDisplayOrder(request.displayOrder().shortValue());
         }
@@ -249,6 +254,65 @@ public class TaxonomyAdminService {
         }
 
         mergeCategoryTranslations(category, request.translations());
+    }
+
+    /**
+     * Uploads (or replaces) the {@code CARD} or {@code BANNER} image for a category.
+     * Each type holds exactly one image — a second upload of the same type replaces
+     * the first rather than adding to a gallery, so the old file is deleted once the
+     * new one is safely stored and referenced.
+     */
+    @Transactional
+    public CategoryAdminResponse uploadCategoryImage(Long categoryId, CategoryImageType imageType,
+                                                      MultipartFile file) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+
+        StoredFile stored = storageService.store(file, "categories");
+        String oldKey = imageKeyOf(category, imageType);
+        setImageKey(category, imageType, stored.key());
+        categoryRepository.save(category);
+        storageService.delete(oldKey);
+
+        log.info("Uploaded {} image {} for category id={}", imageType, stored.key(), categoryId);
+        return toCategoryAdminResponse(categoryId);
+    }
+
+    @Transactional
+    public void deleteCategoryImage(Long categoryId, CategoryImageType imageType) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+
+        String key = imageKeyOf(category, imageType);
+        setImageKey(category, imageType, null);
+        categoryRepository.save(category);
+        storageService.delete(key);
+        log.info("Deleted {} image from category id={}", imageType, categoryId);
+    }
+
+    private String imageKeyOf(Category category, CategoryImageType imageType) {
+        return imageType == CategoryImageType.CARD ? category.getImageUrl() : category.getBannerUrl();
+    }
+
+    private void setImageKey(Category category, CategoryImageType imageType, String key) {
+        if (imageType == CategoryImageType.CARD) {
+            category.setImageUrl(key);
+        } else {
+            category.setBannerUrl(key);
+        }
+    }
+
+    /** Rebuilds one category's admin node, children included, after an image change. */
+    private CategoryAdminResponse toCategoryAdminResponse(Long categoryId) {
+        List<Category> all = categoryRepository.findAllByOrderByDisplayOrderAscIdAsc();
+        Map<Long, List<Category>> byParent = all.stream()
+                .filter(c -> c.getParent() != null)
+                .collect(Collectors.groupingBy(c -> c.getParent().getId()));
+        Category target = all.stream()
+                .filter(c -> c.getId().equals(categoryId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+        return buildCategoryAdminNode(target, byParent, 0);
     }
 
     // -------------------------------------------------------------------- brand
