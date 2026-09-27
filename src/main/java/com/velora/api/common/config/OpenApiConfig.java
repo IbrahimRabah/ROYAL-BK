@@ -46,7 +46,7 @@ public class OpenApiConfig {
                                 """)
                         .contact(new Contact().name("VELORA")))
                 .servers(List.of(
-                        new Server().url("http://localhost:8080").description("Local development")))
+                        new Server().url("http://localhost:8081").description("Local development")))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))
                 .components(new Components().addSecuritySchemes(BEARER_SCHEME,
                         new SecurityScheme()

@@ -1,6 +1,6 @@
 spring:
   application:
-    name: velora-api
+    name: royal-api
 
   servlet:
     multipart:
@@ -8,7 +8,7 @@ spring:
       max-request-size: 10MB
 
   datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=velora;encrypt=true;trustServerCertificate=true
+    url: jdbc:sqlserver://localhost:1433;databaseName=royal;encrypt=true;trustServerCertificate=true
     username: sa
     password: ${DB_PASSWORD}
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
@@ -52,7 +52,7 @@ spring:
           protocol: smtp
 
 server:
-  port: 8080
+  port: 8081
   error:
     include-message: always
 
@@ -74,8 +74,8 @@ springdoc:
 
 velora:
   storage:
-    local-path: D:/ibrahim_watches/velora-uploads
-    public-url-prefix: http://localhost:8080/uploads
+    local-path: D:/ibrahim_watches/royal-uploads
+    public-url-prefix: http://localhost:8081/uploads
     max-file-size-bytes: 5242880
   jwt:
     secret: ${JWT_SECRET}
