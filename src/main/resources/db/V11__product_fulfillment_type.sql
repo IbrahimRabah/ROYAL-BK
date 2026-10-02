@@ -1,6 +1,3 @@
-USE velora;
-GO
-
 /* =====================================================================
    VELORA - V11: product.fulfillment_type and product.shipping_size_class
 

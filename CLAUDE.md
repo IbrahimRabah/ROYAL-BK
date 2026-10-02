@@ -70,7 +70,11 @@ Break any of these and the fix later is a migration, not an edit.
 - Controllers **never** return JPA entities. DTOs only.
 - Controllers never call repositories. Controller → Service → Repository, one way.
 - `@Transactional` belongs on the service, not the controller.
-- `ddl-auto` stays `validate`. The SQL script owns the schema. **Never `update`.**
+- `ddl-auto` stays `validate`. The SQL scripts own the schema. **Never `update`, never
+  `create`.** (Hibernate-built tables are `VARCHAR`, which stores Arabic as `?`, and carry
+  none of the unique constraints below — that is how `royal` once lost its Arabic text.)
+- **Tests run only against `royal_test`**, as a login that cannot open any other database.
+  A test that passes while writing to the real database is worse than one that fails.
 - Every list endpoint is paginated and returns `PageResponse<T>`.
 - Business failures throw `BusinessException(ErrorCode.X)` — never a bare
   `RuntimeException` and never a raw string message.
@@ -81,12 +85,14 @@ Break any of these and the fix later is a migration, not an edit.
 
 | Path | What it is |
 |---|---|
-| `docs/velora_schema_sqlserver.sql` | The schema — 52 tables, the source of truth |
+| `src/main/resources/db/baseline/baseline_through_V14.sql` | The schema — 57 tables, the source of truth. Read `src/main/resources/db/README.md` first |
 | `docs/VELORA_API_Contract.md` | Endpoints + which Angular screen uses each |
 | `docs/VELORA_Backend_Blueprint.md` | Architecture, patterns, package layout |
 
-When adding a table, add it to the SQL file as a **new numbered script**
-(`V2__...sql`). Never edit `V1__initial_schema.sql`.
+Schema changes are a **new numbered script** in `src/main/resources/db/`: `V15__...sql` onwards.
+Never edit an existing `V` script or the baseline, and never run V2–V14 on a database built from
+the baseline (they are already in it). Scripts contain no `USE`; pick the database with
+`sqlcmd -d`. Create databases `COLLATE Arabic_CI_AS`.
 
 ---
 
@@ -105,8 +111,12 @@ When adding a table, add it to the SQL file as a **new numbered script**
 ## Commands
 
 ```powershell
-.\mvnw clean test            # run before every commit
-.\mvnw spring-boot:run       # http://localhost:8080/swagger-ui.html
+.\mvnw clean test            # run before every commit (against royal_test)
+.\mvnw spring-boot:run       # http://localhost:8081/swagger-ui.html
+
+# (Re)build the isolated test database and point the tests at it
+$env:SQLCMDPASSWORD = '<sa password>'
+.\scripts\db\create-test-db.ps1 -WriteTestConfig
 ```
 
 Environment variables required: `DB_PASSWORD`, `JWT_SECRET` (64+ chars).

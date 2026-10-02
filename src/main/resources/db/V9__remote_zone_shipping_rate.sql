@@ -9,11 +9,8 @@
    ESTIMATES, not courier quotes: no courier contract has been signed, so
    there is no real source for these numbers. REMOTE is priced as one tier
    for all five governorates. Replace them with real figures once a courier
-   is contracted. Run once against the `velora` database. Safe to re-run.
+   is contracted. Run once against the database you are upgrading (sqlcmd -d <database>). Safe to re-run.
    ===================================================================== */
-
-USE velora;
-GO
 
 SET QUOTED_IDENTIFIER ON;
 GO

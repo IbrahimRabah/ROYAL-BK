@@ -1,7 +1,7 @@
 /* =====================================================================
    VELORA — V6: widen cart.guest_token
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    Guest tokens used to be a bare UUID (36 characters). Now that the token
    is signed server-side — `<uuid>.<base64url HMAC-SHA256 signature>` — it
@@ -12,9 +12,6 @@
    Every step below checks first, so this script is safe to run again on
    a database where it — or the equivalent manual fix — already applied.
    ===================================================================== */
-
-USE velora;
-GO
 
 /* ---------------------------------------------------------------------
    1. Drop the filtered unique index and the ownership check constraint.

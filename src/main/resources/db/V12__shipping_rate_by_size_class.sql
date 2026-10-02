@@ -1,6 +1,3 @@
-USE velora;
-GO
-
 /* =====================================================================
    VELORA - V12: shipping priced per (zone, size class), with a zone cap
 

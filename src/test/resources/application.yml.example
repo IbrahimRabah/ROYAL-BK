@@ -1,0 +1,55 @@
+spring:
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=royal_test;encrypt=true;trustServerCertificate=true
+    username: royal_test_app
+    password: <printed by scripts/db/create-test-db.ps1>
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC 
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
+  # Not real credentials — tests replace the JavaMailSender bean with a mock and
+  # never open a real SMTP connection. Present only so the mail autoconfiguration
+  # has something to bind to.
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: test@example.com
+    password: test-app-password
+
+velora:
+  storage:
+    local-path: D:/ibrahim_watches/velora-uploads
+    public-url-prefix: http://localhost:8080/uploads
+    max-file-size-bytes: 5242880
+  jwt:
+    secret: REPLACE-WITH-A-LONG-RANDOM-TEST-SECRET-AT-LEAST-64-CHARACTERS-0123456789
+    access-token-minutes: 30
+    refresh-token-days: 30
+  guest-token:
+    secret: REPLACE-WITH-A-LONG-RANDOM-TEST-SECRET-AT-LEAST-64-CHARACTERS-0123456789
+    accept-legacy-unsigned: true
+  cors:
+    allowed-origins: http://localhost:4200
+  rate-limit:
+    login:
+      max-per-ip: 10
+      max-per-account: 5
+      window-minutes: 15
+    otp-send:
+      max-per-ip: 10
+      window-minutes: 60
+  business:
+    reservation-ttl-minutes: 20
+    default-tax-rate: 0.14
+    prices-include-tax: true

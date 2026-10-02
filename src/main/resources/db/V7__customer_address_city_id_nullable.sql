@@ -1,7 +1,7 @@
 /* =====================================================================
    VELORA — V7: customer_address.city_id becomes nullable
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    The business decision documented in the API contract is that a saved
    address captures the city as free text (folded into `area`) and the
@@ -18,9 +18,6 @@
 
    Safe to run again on a database where it already applied.
    ===================================================================== */
-
-USE velora;
-GO
 
 IF EXISTS (
     SELECT 1 FROM sys.columns

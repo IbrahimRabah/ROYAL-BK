@@ -13,11 +13,8 @@
 
    Deactivating rather than deleting: the day either needs its own rate again,
    reactivating it is a price change, not a migration — matching the original
-   intent. Run once against the `velora` database. Safe to re-run.
+   intent. Run once against the database you are upgrading (sqlcmd -d <database>). Safe to re-run.
    ===================================================================== */
-
-USE velora;
-GO
 
 SET QUOTED_IDENTIFIER ON;
 GO

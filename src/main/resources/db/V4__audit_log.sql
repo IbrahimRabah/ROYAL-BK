@@ -1,16 +1,13 @@
 /* =====================================================================
    VELORA — V4: audit log
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    The table already exists from V1 but nothing ever wrote to it, and its
    shape does not match what the application now records. It is empty, so
    recreating it loses nothing — the script checks that and refuses if it
    is wrong.
    ===================================================================== */
-
-USE velora;
-GO
 
 /* Refuse if anything is in there. An audit log is evidence; dropping one
    with rows in it destroys the only record of who did what. */

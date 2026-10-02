@@ -2,12 +2,9 @@
    VELORA — V2: shipping rates
    Flat pricing: 70 EGP Cairo + Lower Egypt, 100 EGP Upper Egypt.
 
-   Run once against the `velora` database. Safe to re-run: it replaces
+   Run once against the database you are upgrading (sqlcmd -d <database>). Safe to re-run: it replaces
    the rate rows rather than adding to them.
    ===================================================================== */
-
-USE velora;
-GO
 
 /* ---------------------------------------------------------------------
    1. Re-map governorates to two effective zones.

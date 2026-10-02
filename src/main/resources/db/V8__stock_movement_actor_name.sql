@@ -1,7 +1,7 @@
 /* =====================================================================
    VELORA — V8: stock_movement.actor_name
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    The movement ledger showed "#1" for every row — actorId with no name,
    unreadable once more than one staff member exists. audit_log already
@@ -11,9 +11,6 @@
 
    Safe to run again on a database where it already applied.
    ===================================================================== */
-
-USE velora;
-GO
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.columns

@@ -1,6 +1,3 @@
-USE velora;
-GO
-
 /* =====================================================================
    VELORA - V13: stop delivering to South Sinai, Aswan and Luxor
 

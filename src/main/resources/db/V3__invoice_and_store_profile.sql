@@ -1,16 +1,13 @@
 /* =====================================================================
    VELORA — V3: store profile and invoices
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    The invoice tables are DROPPED and recreated. That is safe here and
    only here: no invoice has ever been issued, so there is nothing to
    lose. Never run this part again once invoices exist — they are legal
    records and the numbering must never restart.
    ===================================================================== */
-
-USE velora;
-GO
 
 /* ---------------------------------------------------------------------
    1. Seller identity — one row, id = 1.

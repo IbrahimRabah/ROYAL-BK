@@ -1,15 +1,12 @@
 /* =====================================================================
    VELORA — V5: COD settlement and idempotency
 
-   Run once against the `velora` database.
+   Run once against the database you are upgrading (sqlcmd -d <database>).
 
    Both tables are new. `cod_remittance` may exist from V1 with a
    different shape; it is dropped only if empty, and the script refuses
    otherwise — a recorded settlement is a financial document.
    ===================================================================== */
-
-USE velora;
-GO
 
 /* ---------------------------------------------------------------------
    1. Idempotency keys
