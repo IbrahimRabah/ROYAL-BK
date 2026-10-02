@@ -147,6 +147,11 @@ public enum ErrorCode {
     CUSTOM_REQUEST_QUOTE_REQUIRED("A request cannot be accepted before it has been quoted",
             HttpStatus.CONFLICT),
 
+    // ---- portfolio ----
+    PORTFOLIO_ITEM_NOT_FOUND("Portfolio item not found", HttpStatus.NOT_FOUND),
+    /** An archived item is not live: restore it before publishing or changing its images. */
+    PORTFOLIO_ITEM_ARCHIVED("This portfolio item is archived", HttpStatus.CONFLICT),
+
     // ---- review ----
     PURCHASE_REQUIRED("Only verified buyers can review this product",
             HttpStatus.UNPROCESSABLE_ENTITY),

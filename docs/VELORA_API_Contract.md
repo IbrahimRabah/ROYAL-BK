@@ -71,12 +71,13 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 8. [Invoices](#invoices) — `/api/v1/admin/invoices`, `/api/v1/me/invoices`
 9. [Shipping & Geography](#shipping--geography) — `/api/v1/shipping`, `/api/v1/geo`, `/api/v1/admin/shipping`
 10. [Custom Requests](#custom-requests) — `/api/v1/custom-requests`, `/api/v1/admin/custom-requests`
-11. [Dashboard](#dashboard) — `/api/v1/admin/dashboard`
-12. [Audit Log](#audit-log) — `/api/v1/admin/audit`
-13. [Export](#export) — `/api/v1/admin/exports`
-14. [Store Profile](#store-profile) — `/api/v1/admin/settings/store-profile`
-15. [Remittance (COD Settlement)](#remittance-cod-settlement) — `/api/v1/admin/remittances`
-16. [Health Check](#health-check) — `/api/v1/ping`
+11. [Portfolio](#portfolio) — `/api/v1/portfolio`, `/api/v1/admin/portfolio`
+12. [Dashboard](#dashboard) — `/api/v1/admin/dashboard`
+13. [Audit Log](#audit-log) — `/api/v1/admin/audit`
+14. [Export](#export) — `/api/v1/admin/exports`
+15. [Store Profile](#store-profile) — `/api/v1/admin/settings/store-profile`
+16. [Remittance (COD Settlement)](#remittance-cod-settlement) — `/api/v1/admin/remittances`
+17. [Health Check](#health-check) — `/api/v1/ping`
 
 ---
 
@@ -2341,6 +2342,193 @@ From `NEW` or `CONTACTED` this also moves the request to `QUOTED`. While `QUOTED
 | 400 | VALIDATION_FAILED | `amount` missing, zero, negative or implausibly large |
 | 404 | CUSTOM_REQUEST_NOT_FOUND | |
 | 409 | INVALID_STATUS_TRANSITION | The request is `ACCEPTED`, `REJECTED` or `CONVERTED` |
+
+---
+
+## Portfolio
+Base paths: `/api/v1/portfolio` (public), `/api/v1/admin/portfolio` (admin)
+
+Finished custom work shown on the storefront. **A separate entity, not products of type `CUSTOM_WORK`:** a portfolio piece has no price, no variants and no stock, and putting it in the product table would distort catalogue reports, the dashboard and stock turnover. It never appears in the catalogue, the cart or any stock figure.
+
+**Lifecycle** — two independent flags, and the rule between them:
+
+| State | `published` | `archivedAt` | Public sees it |
+|---|---|---|---|
+| Draft (new items start here) | `false` | `null` | no |
+| Live | `true` | `null` | yes |
+| Archived | `false` (forced) | set | no |
+
+- **Archive, never delete** (`DELETE`): sets `archivedAt` and forces `published: false`. The row **and its image files** are kept. Repeating it changes nothing.
+- **Restore** (`PATCH .../restore`): clears `archivedAt`. The item comes back as a **draft**, never straight to live — going live again is a deliberate `publish`.
+- An **archived item cannot be published** (`409 PORTFOLIO_ITEM_ARCHIVED`) and takes **no image changes** until it is restored. The database also refuses an item that is both archived and published.
+- The **slug is unique across archived items too**: a link already shared on WhatsApp or Facebook never starts showing a different piece, and a new item with the same title cannot take an archived item's slug.
+
+**Slug.** `slug` is the public URL segment: `/portfolio/iron-gate-3` (Latin letters, digits, dashes — max 150). On create it is **generated from the Arabic title** (`titleAr`, falling back to `titleEn`) by the same transliteration product slugs use, with `-2`, `-3` … when the generated one is taken. An admin may send `slug` instead: it is normalised the same way, and **an explicit slug that is already taken is `409 SLUG_ALREADY_EXISTS`** (it is not silently renamed). If no Latin slug can be derived from the title and none is sent, the call fails `400 VALIDATION_FAILED`. Changing a slug later (`PUT` with a different `slug`) **breaks links already shared — there is no redirect**. Editing the title does not change the slug.
+
+**Images** follow the product-image rules exactly, through the same storage service: JPEG, PNG, WebP or AVIF, up to 5 MB, **identified by their real bytes**. The client filename and `Content-Type` are never trusted, and the stored extension comes from the detected type (a PNG uploaded as `page.html` is stored as `.png`; HTML sent as `image/png` is refused). At most **20 images per item**; the first uploaded is the main image; exactly one is main at any time.
+
+---
+
+### PortfolioController — public
+
+#### `GET /api/v1/portfolio`
+**Auth:** Public — no token.
+**Summary:** Published, non-archived items, paginated. Order is fixed: `displayOrder` ascending, then `completedAt` newest first (undated last), then newest id. The `sort` parameter is ignored. Titles follow `Accept-Language` (`ar` default; `en` falls back to Arabic when the item has no English title).
+
+**Query params:** `categoryId` (optional), `page` (default 0), `size` (default 12, max 50).
+
+**Success response `200`:** `PageResponse<PortfolioSummaryResponse>`
+```json
+{
+  "content": [
+    {
+      "id": 14, "slug": "bwaba-hdyd-mshghwl", "title": "بوابة حديد مشغول",
+      "imageUrl": "https://cdn.velora.com/uploads/portfolio/2026/10/3f2a9c.jpg", "imageAlt": "بوابة حديد مشغول",
+      "categorySlug": "gates", "categoryName": "بوابات", "completedAt": "2026-09-14"
+    }
+  ],
+  "page": 0, "size": 12, "totalElements": 1, "totalPages": 1, "first": true, "last": true, "empty": false
+}
+```
+`imageUrl`/`imageAlt` are the main image (`null` when the item has none). `categorySlug`/`categoryName`/`completedAt` may be `null`.
+
+---
+
+#### `GET /api/v1/portfolio/{slug}`
+**Auth:** Public — no token.
+**Summary:** One item with all its images, in display order.
+
+**Success response `200`:**
+```json
+{
+  "id": 14, "slug": "bwaba-hdyd-mshghwl", "title": "بوابة حديد مشغول",
+  "description": "بوابة حديد مشغول يدويًا بتصميم مفرغ.",
+  "categorySlug": "gates", "categoryName": "بوابات", "completedAt": "2026-09-14",
+  "images": [
+    { "url": "https://cdn.velora.com/uploads/portfolio/2026/10/3f2a9c.jpg", "alt": "واجهة البوابة", "main": true, "displayOrder": 0 }
+  ]
+}
+```
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 404 | PORTFOLIO_ITEM_NOT_FOUND | Unknown slug, **or** the item is unpublished, **or** archived — one answer for all three, so the public cannot tell a draft from a typo |
+
+---
+
+### AdminPortfolioController
+All routes require `ROLE_ADMIN` (`403` otherwise).
+
+#### `GET /api/v1/admin/portfolio`
+**Summary:** All items including drafts, ordered by `displayOrder` then newest. **Archived items are left out unless `includeArchived=true`.**
+
+**Query params:** `includeArchived` (default `false`), `categoryId`, `page`, `size` (default 20, max 100).
+
+**Success response `200`:** `PageResponse<PortfolioAdminResponse>`.
+
+#### `GET /api/v1/admin/portfolio/{id}`
+**Summary:** One item, archived or not. **Success response `200`:** `PortfolioAdminResponse`. **Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`.
+
+```json
+{
+  "id": 14, "slug": "bwaba-hdyd-mshghwl",
+  "titleAr": "بوابة حديد مشغول", "titleEn": "Wrought iron gate",
+  "descriptionAr": "…", "descriptionEn": "…",
+  "categoryId": 31, "categoryName": "بوابات", "completedAt": "2026-09-14", "displayOrder": 0,
+  "published": true, "archivedAt": null,
+  "images": [
+    { "id": 77, "key": "portfolio/2026/10/3f2a9c.jpg", "url": "https://cdn.velora.com/uploads/portfolio/2026/10/3f2a9c.jpg",
+      "altTextAr": "واجهة البوابة", "altTextEn": null, "main": true, "displayOrder": 0 }
+  ],
+  "createdAt": "2026-10-03T09:00:00Z", "updatedAt": "2026-10-03T09:10:00Z"
+}
+```
+
+---
+
+#### `POST /api/v1/admin/portfolio`
+**Summary:** Create an item. It starts **unpublished** (a draft); add images, then publish.
+
+**Request body:**
+```json
+{
+  "slug": null,
+  "titleAr": "بوابة حديد مشغول", "titleEn": "Wrought iron gate",
+  "descriptionAr": "…", "descriptionEn": "…",
+  "categoryId": 31, "completedAt": "2026-09-14", "displayOrder": 0
+}
+```
+`titleAr` required (max 255). Everything else optional; `displayOrder` defaults to `0` (lower shows first); `categoryId` must exist.
+
+**Success response `201`:** `PortfolioAdminResponse`, `published: false`.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `titleAr` missing/blank, or no Latin slug derivable and none given |
+| 404 | CATEGORY_NOT_FOUND | `categoryId` does not exist |
+| 409 | SLUG_ALREADY_EXISTS | An explicit `slug` is already used (including by an archived item) |
+
+---
+
+#### `PUT /api/v1/admin/portfolio/{id}`
+**Summary:** Replace an item's content. **Send the whole form back:** `titleEn`, `descriptionAr`, `descriptionEn`, `categoryId` and `completedAt` are **cleared when omitted**. `slug` and `displayOrder` are kept when omitted. Does not change `published` or `archivedAt` and works on an archived item too.
+
+**Request body:** same fields as create. **Success response `200`:** `PortfolioAdminResponse`.
+**Errors:** `400 VALIDATION_FAILED`, `404 PORTFOLIO_ITEM_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `409 SLUG_ALREADY_EXISTS` (a different `slug` that another item uses).
+
+---
+
+#### `PATCH /api/v1/admin/portfolio/{id}/publish`
+**Summary:** Show or hide an item. **Explicit state, not a toggle** — sending the same body twice leaves the same state.
+
+**Request body:** `{ "published": true }` (required boolean).
+**Success response `200`:** `PortfolioAdminResponse`.
+**Errors:** `400 VALIDATION_FAILED` (`published` missing), `404 PORTFOLIO_ITEM_NOT_FOUND`, `409 PORTFOLIO_ITEM_ARCHIVED` (publishing an archived item; hiding one is always fine).
+
+---
+
+#### `DELETE /api/v1/admin/portfolio/{id}`
+**Summary:** **Archive** (not delete). Hides the item everywhere public and forces `published: false`; the row and image files stay. Idempotent.
+
+**Success response `200`:** `PortfolioAdminResponse` with `archivedAt` set. **Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`.
+
+---
+
+#### `PATCH /api/v1/admin/portfolio/{id}/restore`
+**Summary:** Bring an archived item back **as an unpublished draft**. Idempotent on an item that is not archived.
+
+**Success response `200`:** `PortfolioAdminResponse` with `archivedAt: null`, `published: false`. **Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`.
+
+---
+
+#### `GET /api/v1/admin/portfolio/{id}/images`
+**Summary:** The item's images in display order. **Success response `200`:** array of image objects (as in `PortfolioAdminResponse.images`). **Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`.
+
+#### `POST /api/v1/admin/portfolio/{id}/images`
+**Summary:** Upload an image. `multipart/form-data`, part name `file`. See *Images* above for the rules.
+
+**Success response `201`:** one image object.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | No file, empty file, over 5 MB, the bytes are not a JPEG/PNG/WebP/AVIF image (whatever the filename or `Content-Type` say), or the item already has 20 images |
+| 404 | PORTFOLIO_ITEM_NOT_FOUND | |
+| 409 | PORTFOLIO_ITEM_ARCHIVED | Restore the item first |
+
+#### `PATCH /api/v1/admin/portfolio/{id}/images/{imageId}`
+**Summary:** Update image metadata. Omitted fields are unchanged.
+
+**Request body:** `{ "altTextAr": "…", "altTextEn": "…", "main": true, "displayOrder": 0 }` — `main: true` makes this the main image and unsets the previous one; `false` is ignored (there is always one main image).
+**Success response `200`:** one image object.
+**Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`, `404 RESOURCE_NOT_FOUND` (the image is not on this item — one answer whether it does not exist or belongs to another item), `409 PORTFOLIO_ITEM_ARCHIVED`.
+
+#### `DELETE /api/v1/admin/portfolio/{id}/images/{imageId}`
+**Summary:** Delete one image **and its file**. If it was the main image, the first remaining one becomes main.
+
+**Success response `204`.** **Errors:** `404 PORTFOLIO_ITEM_NOT_FOUND`, `404 RESOURCE_NOT_FOUND`, `409 PORTFOLIO_ITEM_ARCHIVED`.
 
 ---
 
