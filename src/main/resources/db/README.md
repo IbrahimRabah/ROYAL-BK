@@ -94,9 +94,37 @@ comparing every table's checksum). The admin account, its roles and the shop's n
 carried over. The shop's Arabic legal name and address were already `?????` and were **not** carried
 over: enter them at `PUT /api/v1/admin/settings/store-profile`.
 
-## Known quirk
+## Known issues
 
-`ix_prod_search` (on `product_translation.search_text`) can hold keys up to 2005 bytes against SQL
-Server's 1700-byte limit for a non-clustered index, so SQL Server prints a warning when the baseline is
-applied, and an insert with a very long `search_text` can fail. The code truncates `search_text` to 1000
-characters. The index came from the original schema and is reproduced as it was.
+### Warning when the baseline is applied: `ix_prod_search` … 1700 bytes
+
+Building a database from the baseline prints this, and it is **expected**:
+
+```
+Warning! The maximum key length for a nonclustered index is 1700 bytes. The index 'ix_prod_search'
+has maximum length of 2005 bytes. For some combination of large values, the insert/update operation
+will fail.
+```
+
+It is only a warning; the index is created and the script succeeds. Do not "fix" it by editing the
+baseline.
+
+**What it means.** `ix_prod_search` is on `product_translation (locale, search_text)`.
+`search_text` is `NVARCHAR(1000)`, which is up to 2000 bytes, plus the 5-byte `locale`: the index
+*could* hold an entry of 2005 bytes, and SQL Server limits one to 1700.
+
+**Measured limit** (on `royal_test`, Arabic text, 2 bytes per character): a `search_text` of **849
+characters inserts; 850 fails** with error 1946 *"The index entry of length 1702 bytes for the index
+'ix_prod_search' exceeds the maximum allowed length of 1700 bytes"*.
+
+**Why it cannot happen today.** `search_text` is built as `name + " " + shortDescription`, and the API
+limits those to 255 and 500 characters (`TranslationRequest`), so it is **at most 756 characters**,
+comfortably under 849. (`ProductAdminService.buildSearchText` also truncates to 1000 characters, but
+that is *not* what protects the index: 1000 characters is more than the index accepts. The 255 / 500
+validation is.)
+
+**When it would bite.** If either limit is raised so that the two can add up to 850 or more, or if a
+row is written by a script that bypasses the API. Saving the product would then fail with error 1946.
+If that is ever needed, the fix is one of: truncate `search_text` to 800 characters in
+`buildSearchText`; or shrink the column to `NVARCHAR(800)` in a new `V15`; or index only
+`search_text`'s first part. It was not done now because nothing can reach the limit.
