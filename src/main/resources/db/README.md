@@ -117,14 +117,19 @@ baseline.
 characters inserts; 850 fails** with error 1946 *"The index entry of length 1702 bytes for the index
 'ix_prod_search' exceeds the maximum allowed length of 1700 bytes"*.
 
-**Why it cannot happen today.** `search_text` is built as `name + " " + shortDescription`, and the API
-limits those to 255 and 500 characters (`TranslationRequest`), so it is **at most 756 characters**,
-comfortably under 849. (`ProductAdminService.buildSearchText` also truncates to 1000 characters, but
-that is *not* what protects the index: 1000 characters is more than the index accepts. The 255 / 500
-validation is.)
+**What keeps it from happening.** `ProductAdminService.buildSearchText` caps `search_text` at **800
+characters** (`MAX_SEARCH_TEXT_LENGTH`), below the 849 the index accepts, so a save cannot fail on this
+index however long the name and description are. `ProductSearchTextTest` checks that the cap is below
+the limit, that it is applied, and that text of exactly that length inserts into the real schema.
 
-**When it would bite.** If either limit is raised so that the two can add up to 850 or more, or if a
-row is written by a script that bypasses the API. Saving the product would then fail with error 1946.
-If that is ever needed, the fix is one of: truncate `search_text` to 800 characters in
-`buildSearchText`; or shrink the column to `NVARCHAR(800)` in a new `V15`; or index only
-`search_text`'s first part. It was not done now because nothing can reach the limit.
+In practice the cap is not reached: the API limits name and short description to 255 and 500 characters
+(`TranslationRequest`), so `search_text` is at most 756 characters. The two protections are independent,
+and the cap does not rely on the API limits staying where they are.
+
+**If you change the column or the index**, keep `MAX_SEARCH_TEXT_LENGTH` below what the index allows
+(1700 bytes: with `NVARCHAR` at 2 bytes per character and the 5-byte `locale`, that is 849 characters).
+A new `V15` that shrinks `search_text` to `NVARCHAR(800)` would also remove the warning, if it ever
+becomes a nuisance.
+
+**A row written by a script that bypasses the service** (direct SQL) is not capped. Over 849
+characters it would fail with error 1946.

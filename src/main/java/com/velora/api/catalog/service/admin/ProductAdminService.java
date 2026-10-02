@@ -273,14 +273,30 @@ public class ProductAdminService {
      * Normalizes with the SAME function {@code ProductSpecifications.matches()} uses
      * on the incoming query. These two must never drift apart.
      */
-    private String buildSearchText(String name, String shortDescription) {
+    static String buildSearchText(String name, String shortDescription) {
         String combined = name + " " + (shortDescription == null ? "" : shortDescription);
         String normalized = ArabicNormalizer.normalize(combined);
         if (normalized == null) {
             return null;
         }
-        return normalized.length() > 1000 ? normalized.substring(0, 1000) : normalized;
+        return normalized.length() > MAX_SEARCH_TEXT_LENGTH
+                ? normalized.substring(0, MAX_SEARCH_TEXT_LENGTH) : normalized;
     }
+
+    /**
+     * The longest {@code search_text} that is stored, and the guard that keeps a product
+     * save from failing on the {@code ix_prod_search} index.
+     *
+     * <p>That index is on {@code (locale, search_text)}. {@code search_text} is NVARCHAR, two
+     * bytes per character, and SQL Server limits an index entry to 1700 bytes: 849 characters
+     * fit, 850 fail with error 1946 (measured on the real schema). 800 leaves a margin.
+     *
+     * <p>The 255 / 500 character limits on name and short description keep real input to 756, so
+     * this cap is not normally reached. It is here for the day those limits are raised:
+     * truncating costs a little search coverage at the far end of a long description; failing
+     * the save would cost the product. Keep it below 849 if the column or the index change.
+     */
+    static final int MAX_SEARCH_TEXT_LENGTH = 800;
 
     private void applySpecifications(Product product,
                                      List<ProductCreateRequest.SpecificationRequest> specs) {
