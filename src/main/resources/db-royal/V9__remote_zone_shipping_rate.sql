@@ -1,14 +1,15 @@
 ﻿/* =====================================================================
-   VELORA â€” V9: real rate for the REMOTE shipping zone
+   VELORA â€” V9: estimated rate for the REMOTE shipping zone
 
    V2 flagged this with "REVIEW THIS once a courier is chosen" and priced
    North Sinai, South Sinai, Red Sea, New Valley and Matrouh at a guessed
    100 EGP / 2-7 days â€” the same number as Upper Egypt, which is not a
    real distinction.
 
-   Approximate numbers from the signed courier contract (no per-governorate
-   split: the contract prices REMOTE as one tier, same as the other five
-   zones). Run once against the `velora` database. Safe to re-run.
+   ESTIMATES, not courier quotes: no courier contract has been signed, so
+   there is no real source for these numbers. REMOTE is priced as one tier
+   for all five governorates. Replace them with real figures once a courier
+   is contracted. Run once against the `velora` database. Safe to re-run.
    ===================================================================== */
 
 GO
