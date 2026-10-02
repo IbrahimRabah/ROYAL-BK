@@ -2348,7 +2348,7 @@ Base path: `/api/v1/admin/dashboard`
 ```
 `actionQueues` lists orders by status, **including `AWAITING_SCHEDULE`** ("بانتظار تحديد الموعد"), so orders waiting for a delivery date are visible rather than falling off the screen.
 
-`staleOrders` ("nothing has moved for 24 hours") covers `PENDING`, `CONFIRMED` and `PROCESSING`, and `AWAITING_SCHEDULE` **only while no `scheduledDeliveryAt` has been set**. Then the wait is on staff, who have not agreed a date. Once a date is set the order is waiting for that date, not stuck, and flagging it would be a false alarm — which teaches people to ignore every alert on this screen.
+`staleOrders` ("nothing has moved for 24 hours") covers the statuses before shipping: `PENDING`, `CONFIRMED`, `AWAITING_SCHEDULE` and `PROCESSING`. **An order whose `scheduledDeliveryAt` is still ahead is not stale, in any of them** — it is waiting for that date, not stuck, and flagging it would be a false alarm, which teaches people to ignore every alert on this screen, the real ones included. It counts again as soon as the date has passed without the order having moved: then it is late, which is what this list is for. An order with no appointment (including one in `AWAITING_SCHEDULE`, where the wait is on staff who have not agreed a date) follows the plain rule. Rescheduling into the future takes a late order off the list.
 
 `sales` is revenue booked (placed, non-cancelled orders), not cash in hand. `codPosition.amount` is money the courier is still holding on delivered-but-unpaid COD orders. `alerts` is severity-ordered (`HIGH` > `MEDIUM` > `LOW`).
 

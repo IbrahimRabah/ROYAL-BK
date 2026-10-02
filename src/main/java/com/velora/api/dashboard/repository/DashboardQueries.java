@@ -112,10 +112,13 @@ public class DashboardQueries {
      * <p>A count alone hides the problem: ten orders awaiting confirmation is normal,
      * one awaiting confirmation since Tuesday is not.
      *
-     * <p>An order in AWAITING_SCHEDULE counts only while NO delivery date has been set: then
-     * the wait is on staff, who have not agreed one. Once a date is set the order is waiting
-     * for that date, and an alert about it would be a false alarm — which teaches people to
-     * ignore every alert on this screen.
+     * <p>An order with a delivery date still AHEAD is not stale, in any status before shipping:
+     * it is waiting for that date, not stuck, and an alert about it would be a false alarm.
+     * A false alarm is worse than no alarm, because it teaches people to ignore every alert on
+     * this screen, including the real ones. The order counts again once the date has passed
+     * without it having moved: then it is late, which is exactly what this list is for. An
+     * order with no date at all (including AWAITING_SCHEDULE, where the wait is on staff who
+     * have not agreed one) follows the plain "nothing moved" rule.
      */
     public List<DashboardResponse.StaleOrder> staleOrders(int olderThanHours) {
         return jdbc.query("""
@@ -123,9 +126,10 @@ public class DashboardQueries {
                        id, order_number, fulfillment_status, contact_name, grand_total,
                        DATEDIFF(hour, updated_at, SYSDATETIMEOFFSET()) AS hours_waiting
                 FROM customer_order
-                WHERE (fulfillment_status IN ('PENDING', 'CONFIRMED', 'PROCESSING')
-                       OR (fulfillment_status = 'AWAITING_SCHEDULE'
-                           AND scheduled_delivery_at IS NULL))
+                WHERE fulfillment_status IN
+                      ('PENDING', 'CONFIRMED', 'AWAITING_SCHEDULE', 'PROCESSING')
+                  AND (scheduled_delivery_at IS NULL
+                       OR scheduled_delivery_at <= SYSDATETIMEOFFSET())
                   AND DATEDIFF(hour, updated_at, SYSDATETIMEOFFSET()) >= ?
                 ORDER BY updated_at ASC
                 """,

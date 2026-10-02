@@ -694,6 +694,99 @@ class OrderDeliveryScheduleIntegrationTest {
     }
 
     @Test
+    @DisplayName("An order with a delivery date still ahead is not stale in any status before shipping")
+    void futureDateIsNeverStaleBeforeShipping() {
+        Long confirmed = placeOrder(1);
+        advance(confirmed, CONFIRMED);
+        orderService.scheduleDelivery(confirmed, inDays(10, 10), null, staffId, "ar");
+
+        Long awaiting = placeOrder(1);
+        advance(awaiting, CONFIRMED);
+        advance(awaiting, AWAITING_SCHEDULE);
+        orderService.scheduleDelivery(awaiting, inDays(10, 10), null, staffId, "ar");
+
+        Long processing = placeOrder(1);
+        advance(processing, CONFIRMED);
+        advance(processing, PROCESSING);
+        orderService.scheduleDelivery(processing, inDays(10, 10), null, staffId, "ar");
+
+        for (Long id : List.of(confirmed, awaiting, processing)) {
+            ageByDays(id, 3);
+        }
+
+        assertThat(staleIds()).as("each of them is waiting for its date, not stuck")
+                .doesNotContain(confirmed, awaiting, processing);
+    }
+
+    @Test
+    @DisplayName("The same orders count as stale again once the date has passed without them moving")
+    void staleAgainWhenTheDatePasses() {
+        Long confirmed = placeOrder(1);
+        advance(confirmed, CONFIRMED);
+        orderService.scheduleDelivery(confirmed, inDays(10, 10), null, staffId, "ar");
+
+        Long awaiting = placeOrder(1);
+        advance(awaiting, CONFIRMED);
+        advance(awaiting, AWAITING_SCHEDULE);
+        orderService.scheduleDelivery(awaiting, inDays(10, 10), null, staffId, "ar");
+
+        Long processing = placeOrder(1);
+        advance(processing, CONFIRMED);
+        advance(processing, PROCESSING);
+        orderService.scheduleDelivery(processing, inDays(10, 10), null, staffId, "ar");
+
+        for (Long id : List.of(confirmed, awaiting, processing)) {
+            ageByDays(id, 3);
+        }
+        assertThat(staleIds()).doesNotContain(confirmed, awaiting, processing);
+
+        // Time passes: the appointment is now behind us and nothing shipped.
+        for (Long id : List.of(confirmed, awaiting, processing)) {
+            jdbc.update("UPDATE customer_order SET scheduled_delivery_at = DATEADD(hour, -2, SYSDATETIMEOFFSET()) "
+                    + "WHERE id = ?", id);
+        }
+
+        assertThat(staleIds()).as("late is exactly what the list is for")
+                .contains(confirmed, awaiting, processing);
+    }
+
+    @Test
+    @DisplayName("An order with no date follows the plain rule: stuck in PROCESSING or CONFIRMED for a day is stale")
+    void noDateStillFollowsThePlainRule() {
+        Long confirmed = placeOrder(1);
+        advance(confirmed, CONFIRMED);
+        Long processing = placeOrder(1);
+        advance(processing, CONFIRMED);
+        advance(processing, PROCESSING);
+        Long freshProcessing = placeOrder(1);
+        advance(freshProcessing, CONFIRMED);
+        advance(freshProcessing, PROCESSING);
+
+        ageByDays(confirmed, 3);
+        ageByDays(processing, 3);
+
+        assertThat(staleIds()).contains(confirmed, processing).doesNotContain(freshProcessing);
+    }
+
+    @Test
+    @DisplayName("Rescheduling into the future takes a late order off the list again")
+    void reschedulingClearsTheAlert() {
+        Long orderId = placeOrder(1);
+        advance(orderId, CONFIRMED);
+        advance(orderId, PROCESSING);
+        orderService.scheduleDelivery(orderId, inDays(5, 10), null, staffId, "ar");
+        ageByDays(orderId, 3);
+        jdbc.update("UPDATE customer_order SET scheduled_delivery_at = DATEADD(hour, -2, SYSDATETIMEOFFSET()) "
+                + "WHERE id = ?", orderId);
+        assertThat(staleIds()).as("the appointment came and went").contains(orderId);
+
+        orderService.scheduleDelivery(orderId, inDays(6, 10), "customer asked for another day", staffId, "ar");
+        ageByDays(orderId, 3);   // even long untouched, it now has a date ahead
+
+        assertThat(staleIds()).doesNotContain(orderId);
+    }
+
+    @Test
     @DisplayName("A fresh AWAITING_SCHEDULE order is not stale yet")
     void freshOrderIsNotStale() {
         Long orderId = placeOrder(1);
@@ -758,6 +851,16 @@ class OrderDeliveryScheduleIntegrationTest {
 
     private String invoiceNumberOf(Long orderId) {
         return invoiceService.findInvoiceNumberForOrder(orderId);
+    }
+
+    private List<Long> staleIds() {
+        return dashboardQueries.staleOrders(24).stream()
+                .map(DashboardResponse.StaleOrder::orderId).toList();
+    }
+
+    private void ageByDays(Long orderId, int days) {
+        jdbc.update("UPDATE customer_order SET updated_at = DATEADD(day, ?, SYSDATETIMEOFFSET()) WHERE id = ?",
+                -days, orderId);
     }
 
     private Inventory stock() {
