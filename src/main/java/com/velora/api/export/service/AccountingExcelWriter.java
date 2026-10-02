@@ -41,11 +41,11 @@ public class AccountingExcelWriter {
     private static final String[] HEADERS = {
             "رقم الطلب", "التاريخ", "العميل", "الموبايل", "المحافظة", "المنطقة",
             "عدد الأصناف", "الكمية", "الإجمالي الفرعي", "الخصم", "الشحن",
-            "الإجمالي", "منه ضريبة", "الصافي", "طريقة الدفع", "حالة الدفع", "حالة الطلب"
+            "التركيب", "رسوم الدفع عند الاستلام", "الإجمالي", "منه ضريبة", "الصافي", "طريقة الدفع", "حالة الدفع", "حالة الطلب"
     };
 
     private static final int[] WIDTHS = {
-            18, 17, 20, 14, 14, 18, 9, 8, 14, 11, 10, 14, 12, 14, 12, 13, 16
+            18, 17, 20, 14, 14, 18, 9, 8, 14, 11, 10, 11, 16, 14, 12, 14, 12, 13, 16
     };
 
     public byte[] write(List<CustomerOrder> orders, String title) {
@@ -124,6 +124,8 @@ public class AccountingExcelWriter {
         money(row, col++, order.getSubtotalGross(), styles.money);
         money(row, col++, order.getDiscountTotal(), styles.money);
         money(row, col++, order.getShippingCost(), styles.money);
+        money(row, col++, order.getAssemblyTotal(), styles.money);
+        money(row, col++, order.getCodFee(), styles.money);
         money(row, col++, order.getGrandTotal(), styles.moneyBold);
         money(row, col++, order.getTaxTotal(), styles.money);
         money(row, col++, order.getNetTotal(), styles.money);
@@ -152,11 +154,13 @@ public class AccountingExcelWriter {
         money(row, 8, totals.subtotal, styles.totalMoney);
         money(row, 9, totals.discount, styles.totalMoney);
         money(row, 10, totals.shipping, styles.totalMoney);
-        money(row, 11, totals.grandTotal, styles.totalMoney);
-        money(row, 12, totals.tax, styles.totalMoney);
-        money(row, 13, totals.net, styles.totalMoney);
+        money(row, 11, totals.assembly, styles.totalMoney);
+        money(row, 12, totals.codFee, styles.totalMoney);
+        money(row, 13, totals.grandTotal, styles.totalMoney);
+        money(row, 14, totals.tax, styles.totalMoney);
+        money(row, 15, totals.net, styles.totalMoney);
 
-        for (int i = 14; i < HEADERS.length; i++) {
+        for (int i = 16; i < HEADERS.length; i++) {
             row.createCell(i).setCellStyle(styles.totalLabel);
         }
     }
@@ -231,6 +235,8 @@ public class AccountingExcelWriter {
         private BigDecimal subtotal = BigDecimal.ZERO;
         private BigDecimal discount = BigDecimal.ZERO;
         private BigDecimal shipping = BigDecimal.ZERO;
+        private BigDecimal assembly = BigDecimal.ZERO;
+        private BigDecimal codFee = BigDecimal.ZERO;
         private BigDecimal grandTotal = BigDecimal.ZERO;
         private BigDecimal tax = BigDecimal.ZERO;
         private BigDecimal net = BigDecimal.ZERO;
@@ -241,6 +247,8 @@ public class AccountingExcelWriter {
             subtotal = subtotal.add(MoneyUtils.nullSafe(order.getSubtotalGross()));
             discount = discount.add(MoneyUtils.nullSafe(order.getDiscountTotal()));
             shipping = shipping.add(MoneyUtils.nullSafe(order.getShippingCost()));
+            assembly = assembly.add(MoneyUtils.nullSafe(order.getAssemblyTotal()));
+            codFee = codFee.add(MoneyUtils.nullSafe(order.getCodFee()));
             grandTotal = grandTotal.add(MoneyUtils.nullSafe(order.getGrandTotal()));
             tax = tax.add(MoneyUtils.nullSafe(order.getTaxTotal()));
             net = net.add(MoneyUtils.nullSafe(order.getNetTotal()));

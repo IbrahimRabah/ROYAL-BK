@@ -69,6 +69,20 @@
                                           th:text="${order.shippingCost} + ' ' + ${order.currency}">0.00 EGP</span>
                                 </td>
                             </tr>
+                            <tr th:if="${order.assemblyTotal.signum() > 0}">
+                                <td style="padding:4px 0; font-size:13px; color:#555;">التركيب</td>
+                                <td style="padding:4px 0; font-size:13px; color:#555; text-align:left;">
+                                    <span style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                          th:text="${order.assemblyTotal} + ' ' + ${order.currency}">0.00 EGP</span>
+                                </td>
+                            </tr>
+                            <tr th:if="${order.codFee.signum() > 0}">
+                                <td style="padding:4px 0; font-size:13px; color:#555;">رسوم الدفع عند الاستلام</td>
+                                <td style="padding:4px 0; font-size:13px; color:#555; text-align:left;">
+                                    <span style="direction:ltr; unicode-bidi:isolate; display:inline-block;"
+                                          th:text="${order.codFee} + ' ' + ${order.currency}">0.00 EGP</span>
+                                </td>
+                            </tr>
                             <tr>
                                 <td style="padding:8px 0; font-size:16px; font-weight:bold; color:#1c1c28;
                                            border-top:2px solid #1c1c28;">الإجمالي</td>

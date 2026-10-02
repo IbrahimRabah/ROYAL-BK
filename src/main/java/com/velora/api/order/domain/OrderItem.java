@@ -99,10 +99,24 @@ public class OrderItem {
     @Column(name = "line_tax_amount", nullable = false, precision = 19, scale = 4)
     private BigDecimal lineTaxAmount;
 
+    /** Assembly fee PER PIECE at purchase, tax-inclusive. Zero when the piece needs none. */
+    @Column(name = "assembly_fee", nullable = false, precision = 19, scale = 4)
+    private BigDecimal assemblyFee = BigDecimal.ZERO;
+
     @Column(name = "quantity_returned", nullable = false)
     private int quantityReturned;
 
     // ------------------------------------------------------------------ helpers
+
+    /** The assembly charged for this whole line: per-piece fee x quantity. */
+    public BigDecimal assemblyTotal() {
+        return com.velora.api.common.util.MoneyUtils.lineTotal(assemblyFee, quantity);
+    }
+
+    /** Tax inside {@link #assemblyTotal()}, at this line's own rate. */
+    public BigDecimal assemblyTax() {
+        return com.velora.api.common.util.MoneyUtils.taxFromGross(assemblyTotal(), taxRate);
+    }
 
     public int returnableQuantity() {
         return quantity - quantityReturned;

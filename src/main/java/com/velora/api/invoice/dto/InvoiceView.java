@@ -32,6 +32,8 @@ public record InvoiceView(
         BigDecimal subtotalGross,
         BigDecimal discountTotal,
         BigDecimal shippingCost,
+        BigDecimal codFee,
+        BigDecimal assemblyTotal,
         BigDecimal netTotal,
         BigDecimal taxTotal,
         BigDecimal grandTotal,

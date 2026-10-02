@@ -1,6 +1,7 @@
 package com.velora.api.catalog.domain;
 
 import com.velora.api.common.audit.BaseAuditEntity;
+import com.velora.api.common.util.MoneyUtils;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -79,6 +80,19 @@ public class Product extends BaseAuditEntity {
     @Column(name = "shipping_size_class", length = 10)
     private ShippingSizeClass shippingSizeClass;
 
+    /** The piece has to be assembled or installed when it is delivered. */
+    @Column(name = "requires_assembly", nullable = false)
+    private boolean requiresAssembly;
+
+    /**
+     * What assembly costs, per piece, tax-INCLUSIVE like every price here. Only charged while
+     * {@link #requiresAssembly} is true, and zero until a product is priced. Kept on the product
+     * rather than the variant on purpose: it is a property of the piece, not of its size or
+     * colour. What an order paid is snapshotted on the order item, never read back from here.
+     */
+    @Column(name = "assembly_fee", nullable = false, precision = 19, scale = 4)
+    private BigDecimal assemblyFee = BigDecimal.ZERO;
+
     @Column(name = "is_featured", nullable = false)
     private boolean featured;
 
@@ -136,6 +150,15 @@ public class Product extends BaseAuditEntity {
 
     public boolean isPurchasable() {
         return status == ProductStatus.ACTIVE && archivedAt == null && isInStock();
+    }
+
+    /**
+     * The one rule for what assembling ONE of this product costs: the fee if the product needs
+     * assembly, zero if it does not — whatever the stored fee says. The cart, the shipping quote
+     * and checkout all go through this, so they cannot disagree about it.
+     */
+    public BigDecimal effectiveAssemblyFee() {
+        return requiresAssembly ? MoneyUtils.round(assemblyFee) : MoneyUtils.ZERO;
     }
 
     public boolean isReadyMade() {

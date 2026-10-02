@@ -43,6 +43,9 @@ public record OrderResponse(
                 + "shipping was priced per size class — use shippingCost alone for those.")
         List<ShippingBreakdownLine> shippingBreakdown,
         BigDecimal codFee,
+        @Schema(description = "Assembly charged on this order (per-piece fee x quantity, frozen at "
+                + "purchase). Already inside grandTotal; zero when nothing was assembled.")
+        BigDecimal assemblyTotal,
         @Schema(description = "What the courier collects") BigDecimal grandTotal,
         @Schema(description = "Extracted from the gross totals") BigDecimal taxTotal,
         BigDecimal netTotal,

@@ -23,6 +23,7 @@ import com.velora.api.common.dto.PageResponse;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.util.ArabicNormalizer;
+import com.velora.api.common.util.MoneyUtils;
 import com.velora.api.common.util.SlugGenerator;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -84,6 +85,9 @@ public class ProductAdminService {
             product.setFulfillmentType(request.fulfillmentType());
         }
         product.setShippingSizeClass(request.shippingSizeClass());
+        product.setRequiresAssembly(Boolean.TRUE.equals(request.requiresAssembly()));
+        product.setAssemblyFee(request.assemblyFee() == null
+                ? MoneyUtils.ZERO : MoneyUtils.round(request.assemblyFee()));
         requireShippingSizeForReadyMade(product);
 
         String slug = resolveSlug(request.slug(), request.translations(), null);
@@ -114,6 +118,12 @@ public class ProductAdminService {
         }
         if (request.shippingSizeClass() != null) {
             product.setShippingSizeClass(request.shippingSizeClass());
+        }
+        if (request.requiresAssembly() != null) {
+            product.setRequiresAssembly(request.requiresAssembly());
+        }
+        if (request.assemblyFee() != null) {
+            product.setAssemblyFee(MoneyUtils.round(request.assemblyFee()));
         }
         requireShippingSizeForReadyMade(product);
 
@@ -194,6 +204,8 @@ public class ProductAdminService {
         copy.setNewArrival(false);
         copy.setFulfillmentType(source.getFulfillmentType());
         copy.setShippingSizeClass(source.getShippingSizeClass());
+        copy.setRequiresAssembly(source.isRequiresAssembly());
+        copy.setAssemblyFee(source.getAssemblyFee());
         copy.setStatus(ProductStatus.DRAFT);
         copy.setSlug(SlugGenerator.generateUnique(
                 source.getSlug() + "-copy", s -> !productRepository.existsBySlug(s)));
@@ -481,6 +493,8 @@ public class ProductAdminService {
                 product.isNewArrival(),
                 product.getFulfillmentType(),
                 product.getShippingSizeClass(),
+                product.isRequiresAssembly(),
+                product.getAssemblyFee(),
                 specifications,
                 product.getVariants().size(),
                 product.getImages().size(),

@@ -429,6 +429,7 @@ public class OrderService {
                 order.getShippingUncappedCost(),
                 shippingBreakdownJson.fromJson(order.getShippingBreakdown()),
                 order.getCodFee(),
+                order.getAssemblyTotal(),
                 order.getGrandTotal(),
                 order.getTaxTotal(),
                 order.getNetTotal(),
@@ -474,6 +475,8 @@ public class OrderService {
                 item.getAllocatedCartDiscount(),
                 item.getLineTotalGross(),
                 item.getLineTaxAmount(),
+                item.getAssemblyFee(),
+                item.assemblyTotal(),
                 item.getQuantityReturned(),
                 item.returnableQuantity());
     }

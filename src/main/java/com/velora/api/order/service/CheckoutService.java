@@ -205,6 +205,7 @@ public class CheckoutService {
         order.setDiscountTotal(totals.discount());
         order.setShippingCost(totals.shipping());
         order.setCodFee(totals.codFee());
+        order.setAssemblyTotal(totals.assembly());
         order.setGrandTotal(totals.grandTotal());
         order.setTaxTotal(totals.tax());
         order.setNetTotal(totals.net());
@@ -293,6 +294,7 @@ public class CheckoutService {
                     variant.getTaxRate(),
                     variant.getWeightGrams(),
                     product.getShippingSizeClass(),
+                    product.effectiveAssemblyFee(),
                     item.getQuantity()));
         }
         return lines;
@@ -332,17 +334,35 @@ public class CheckoutService {
             tax = tax.add(MoneyUtils.taxFromGross(taxableGross, lines.get(i).taxRate()));
         }
 
+        // Assembly is a per-piece fee, charged on top of the goods and outside the cart
+        // discount (the discount applies to goods only, so none of it is allocated here).
+        // Like every price it is TAX-INCLUSIVE: its tax is extracted from the fee at the
+        // line's own rate and added to the order tax, never added to the fee.
+        // TODO(accountant): confirm assembly is taxable at the goods rate. If it is a
+        // separately-rated service, the rate belongs on the product, not borrowed from
+        // the variant. Fees are zero until this is confirmed, so nothing is charged yet.
+        BigDecimal assembly = MoneyUtils.ZERO;
+        for (LineSnapshot line : lines) {
+            BigDecimal lineAssembly = MoneyUtils.lineTotal(line.assemblyFee(), line.quantity());
+            assembly = assembly.add(lineAssembly);
+            tax = tax.add(MoneyUtils.taxFromGross(lineAssembly, line.taxRate()));
+        }
+        assembly = MoneyUtils.round(assembly);
+
         BigDecimal grandTotal = MoneyUtils.round(subtotal
                 .subtract(discount)
                 .add(shipping.shippingCost())
-                .add(shipping.codFee()));
+                .add(shipping.codFee())
+                .add(assembly));
 
-        // Shipping is treated as untaxed here. Confirm with an accountant — if it is
-        // taxable, the tax comes out of the shipping charge, it is not added to it.
+        // Shipping and the COD fee are treated as untaxed here. Confirm with an
+        // accountant — if either is taxable, the tax comes out of the charge, it is not
+        // added to it. (Assembly above is the one extra that IS taxed, pending the same
+        // confirmation.)
         BigDecimal net = MoneyUtils.round(grandTotal.subtract(tax));
 
         return new Totals(subtotal, discount, shipping.shippingCost(), shipping.codFee(),
-                grandTotal, MoneyUtils.round(tax), net, lineTotals, allocations);
+                assembly, grandTotal, MoneyUtils.round(tax), net, lineTotals, allocations);
     }
 
     /** Copies every line from the snapshot. Nothing here reads the catalog. */
@@ -372,6 +392,7 @@ public class CheckoutService {
             item.setTaxRate(line.taxRate());
             item.setLineTotalGross(lineTotal);
             item.setLineTaxAmount(MoneyUtils.taxFromGross(taxableGross, line.taxRate()));
+            item.setAssemblyFee(line.assemblyFee());
 
             order.addItem(item);
         }
@@ -493,7 +514,8 @@ public class CheckoutService {
             ProductVariant variant, Product product,
             String nameAr, String nameEn, String sku, String variantSummary,
             String imageUrl, BigDecimal unitPrice, BigDecimal taxRate,
-            int weightGrams, ShippingSizeClass shippingSizeClass, int quantity) {
+            int weightGrams, ShippingSizeClass shippingSizeClass,
+            BigDecimal assemblyFee, int quantity) {
     }
 
     /** The address, flattened, before anything is written. */
@@ -506,7 +528,7 @@ public class CheckoutService {
     /** Every money figure for one order, computed once. */
     private record Totals(
             BigDecimal subtotal, BigDecimal discount, BigDecimal shipping, BigDecimal codFee,
-            BigDecimal grandTotal, BigDecimal tax, BigDecimal net,
+            BigDecimal assembly, BigDecimal grandTotal, BigDecimal tax, BigDecimal net,
             List<BigDecimal> lineTotals, List<BigDecimal> allocations) {
     }
 }

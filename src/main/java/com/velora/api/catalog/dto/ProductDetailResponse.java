@@ -35,6 +35,11 @@ public record ProductDetailResponse(
         boolean newArrival,
         FulfillmentType fulfillmentType,
         ShippingSizeClass shippingSizeClass,
+        @Schema(description = "The piece has to be assembled on delivery")
+        boolean requiresAssembly,
+        @Schema(description = "Assembly fee PER PIECE, tax-inclusive, added to the order when the "
+                + "piece is bought. Zero when no assembly is needed.")
+        BigDecimal assemblyFee,
         SeoResponse seo
 ) {
 

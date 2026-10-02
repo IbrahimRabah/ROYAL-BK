@@ -26,6 +26,10 @@ public record OrderItemResponse(
         BigDecimal allocatedCartDiscount,
         BigDecimal lineTotal,
         BigDecimal taxAmount,
+        @Schema(description = "Assembly fee PER PIECE at purchase. Zero when the piece needs none.")
+        BigDecimal assemblyFee,
+        @Schema(description = "assemblyFee x quantity — what assembling this line cost")
+        BigDecimal assemblyTotal,
         int quantityReturned,
         int returnableQuantity
 ) {

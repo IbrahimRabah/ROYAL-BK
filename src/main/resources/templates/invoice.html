@@ -363,6 +363,20 @@
                         0.00
                     </td>
                 </tr>
+                <tr th:if="${view.assemblyTotal.signum() > 0}">
+                    <td class="label">التركيب</td>
+                    <td class="value"
+                        th:text="${#numbers.formatDecimal(view.assemblyTotal, 1, 'COMMA', 2, 'POINT')}">
+                        0.00
+                    </td>
+                </tr>
+                <tr th:if="${view.codFee.signum() > 0}">
+                    <td class="label">رسوم الدفع عند الاستلام</td>
+                    <td class="value"
+                        th:text="${#numbers.formatDecimal(view.codFee, 1, 'COMMA', 2, 'POINT')}">
+                        0.00
+                    </td>
+                </tr>
                 <tr class="sep">
                     <td class="label">الصافي قبل الضريبة</td>
                     <td class="value"

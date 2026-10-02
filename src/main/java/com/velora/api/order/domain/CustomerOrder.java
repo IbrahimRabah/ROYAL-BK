@@ -91,6 +91,13 @@ public class CustomerOrder {
     @Column(name = "cod_fee", nullable = false, precision = 19, scale = 4)
     private BigDecimal codFee = BigDecimal.ZERO;
 
+    /**
+     * Assembly charged on this order: the sum of each line's per-piece fee x quantity,
+     * frozen at purchase. Tax-inclusive; its tax is inside {@code taxTotal}.
+     */
+    @Column(name = "assembly_total", nullable = false, precision = 19, scale = 4)
+    private BigDecimal assemblyTotal = BigDecimal.ZERO;
+
     /** What the courier collects. */
     @Column(name = "grand_total", nullable = false, precision = 19, scale = 4)
     private BigDecimal grandTotal;

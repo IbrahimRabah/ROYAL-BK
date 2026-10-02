@@ -24,7 +24,11 @@ public record CartResponse(
         @Schema(description = "Coupon discount. Zero until the promotion module lands.")
         BigDecimal discountTotal,
 
-        @Schema(description = "subtotal - discount. Shipping is added at checkout.")
+        @Schema(description = "Assembly for the pieces that need it (fee x quantity), tax-inclusive. "
+                + "Zero when nothing in the cart is assembled.")
+        BigDecimal assemblyTotal,
+
+        @Schema(description = "subtotal - discount + assembly. Shipping is added at checkout.")
         BigDecimal estimatedTotal,
 
         @Schema(description = "Tax contained in the subtotal — extracted, not added")

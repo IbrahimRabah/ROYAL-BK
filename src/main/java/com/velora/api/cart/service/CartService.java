@@ -359,6 +359,7 @@ public class CartService {
         List<CartItemResponse> items = new ArrayList<>();
         BigDecimal subtotal = MoneyUtils.ZERO;
         BigDecimal taxIncluded = MoneyUtils.ZERO;
+        BigDecimal assembly = MoneyUtils.ZERO;
 
         for (CartItem item : cart.getItems()) {
             ProductVariant variant = item.getVariant();
@@ -371,6 +372,13 @@ public class CartService {
             subtotal = subtotal.add(lineTotal);
             taxIncluded = taxIncluded.add(
                     MoneyUtils.taxFromGross(lineTotal, variant.getTaxRate()));
+
+            // Same rule the order applies: per-piece fee x quantity, taxed at the line rate.
+            BigDecimal lineAssembly = MoneyUtils.lineTotal(
+                    product.effectiveAssemblyFee(), item.getQuantity());
+            assembly = assembly.add(lineAssembly);
+            taxIncluded = taxIncluded.add(
+                    MoneyUtils.taxFromGross(lineAssembly, variant.getTaxRate()));
 
             ProductImage image = product.mainImage();
 
@@ -394,7 +402,7 @@ public class CartService {
 
         // TODO(promotion module): apply the coupon and allocate it to the lines.
         BigDecimal discount = MoneyUtils.ZERO;
-        BigDecimal estimated = MoneyUtils.round(subtotal.subtract(discount));
+        BigDecimal estimated = MoneyUtils.round(subtotal.subtract(discount).add(assembly));
 
         List<CartWarning> warnings = collectWarnings(cart);
         boolean ready = !cart.isEmpty()
@@ -407,6 +415,7 @@ public class CartService {
                 cart.totalQuantity(),
                 MoneyUtils.round(subtotal),
                 discount,
+                MoneyUtils.round(assembly),
                 estimated,
                 MoneyUtils.round(taxIncluded),
                 cart.getCouponCode(),

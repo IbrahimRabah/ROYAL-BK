@@ -1,6 +1,6 @@
 # VELORA API Contract
 
-Complete reference for every REST endpoint exposed by the VELORA backend (Spring Boot 4.1 / Java 21). Generated from the controllers, DTOs, service layer and `ErrorCode` catalog as of 2026-10-02.
+Complete reference for every REST endpoint exposed by the VELORA backend (Spring Boot 4.1 / Java 21). Generated from the controllers, DTOs, service layer and `ErrorCode` catalog as of 2026-10-03.
 
 ## Conventions
 
@@ -399,7 +399,9 @@ All endpoints in this section are public (no auth). Response locale is resolved 
       "featured": true,
       "newArrival": false,
       "fulfillmentType": "READY_MADE",
-      "shippingSizeClass": "MEDIUM"
+      "shippingSizeClass": "MEDIUM",
+      "requiresAssembly": true,
+      "assemblyFee": 300.0000
     }
   ],
   "page": 0, "size": 24, "totalElements": 137, "totalPages": 6,
@@ -449,6 +451,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
   "images": [{ "id": 9000, "url": "https://cdn.velora.com/products/101/main.jpg", "thumbUrl": "https://cdn.velora.com/products/101/main_thumb.jpg", "alt": "Classic Gold Watch", "main": true }],
   "inStock": true, "featured": true, "newArrival": false,
   "fulfillmentType": "READY_MADE", "shippingSizeClass": "MEDIUM",
+  "requiresAssembly": true, "assemblyFee": 300.0000,
   "seo": { "metaTitle": "الساعة الكلاسيكية الذهبية | Velora", "metaDescription": "تسوق الساعة الكلاسيكية الذهبية.", "canonicalPath": "/products/classic-gold-watch" }
 }
 ```
@@ -613,6 +616,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
       "categoryId": 12, "categoryName": "ساعات رجالية", "brandId": 3, "brandName": "فيلورا",
       "featured": false, "newArrival": true,
       "fulfillmentType": "READY_MADE", "shippingSizeClass": "MEDIUM",
+      "requiresAssembly": true, "assemblyFee": 300.0000,
       "variantCount": 2, "imageCount": 4,
       "minPrice": 2200.00, "maxPrice": 2600.00, "availableQty": 56,
       "publishedAt": "2026-07-01T09:00:00Z", "archivedAt": null,
@@ -652,13 +656,17 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
   "newArrival": true,
   "specifications": [ { "attributeId": 9, "attributeValueId": null, "valueText": "Automatic" } ],
   "fulfillmentType": "READY_MADE",
-  "shippingSizeClass": "MEDIUM"
+  "shippingSizeClass": "MEDIUM",
+  "requiresAssembly": true,
+  "assemblyFee": 300
 }
 ```
 `categoryId` required. `translations` required, non-empty, each `locale` one of `ar`|`en`, `name` required (max 255).
 
 `fulfillmentType` — `READY_MADE` \| `MADE_TO_ORDER` \| `CUSTOM_WORK`; how the product is sold, **not** what it is (watch / wallet / perfume is the category). Optional on create, defaults to `READY_MADE`. Only `READY_MADE` products can be added to a cart.
 `shippingSizeClass` — `SMALL` \| `MEDIUM` \| `LARGE`. **Required when `fulfillmentType` is `READY_MADE`** (including when it is omitted and defaulted); optional for the other two types. Missing → `400 VALIDATION_FAILED`.
+`requiresAssembly` — boolean, optional, defaults to `false`: the piece has to be assembled on delivery.
+`assemblyFee` — decimal `>= 0`, optional, defaults to `0`: the fee **per piece**, **tax-inclusive** like every price. It is only charged while `requiresAssembly` is `true`; a stored fee on a product with `requiresAssembly: false` is ignored at the cart, quote and checkout. A negative value fails `400 VALIDATION_FAILED`. Fees are `0` for now — nothing is charged until a fee is set.
 
 **Success response `201`:** `ProductAdminResponse`, `status: "DRAFT"`, `variantCount: 0`, `warnings` including `"No variants — this product cannot be published or bought"` and `"No images"`.
 
@@ -675,6 +683,8 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 **Summary:** Update category, brand, slug, translations and specifications. `translations`/`specifications`, if present, fully replace the existing set.
 
 **Request body:** same shape as create (minus `slug` required — only changes if different).
+
+`requiresAssembly` and `assemblyFee` follow the same rule — **omit or send `null` to leave unchanged**; to switch assembly off send `requiresAssembly: false` (and `assemblyFee: 0` to clear the fee).
 
 `fulfillmentType` and `shippingSizeClass`: **omit or send `null` to leave the stored value unchanged** (there is no way to clear a value with `null`). After applying them, a `READY_MADE` product must have a `shippingSizeClass` or the request fails with `400 VALIDATION_FAILED`. Products that existed before this field was added are `READY_MADE` with `shippingSizeClass: null`, so the first edit of each must supply a size.
 
@@ -1142,7 +1152,7 @@ Send this back as `X-Guest-Token` on every subsequent cart, shipping-quote and c
     }
   ],
   "itemCount": 1, "totalQuantity": 1, "subtotal": 8500.0000, "discountTotal": 0.0000,
-  "estimatedTotal": 8500.0000, "taxIncluded": 1108.7000, "couponCode": null,
+  "assemblyTotal": 0.0000, "estimatedTotal": 8500.0000, "taxIncluded": 1108.7000, "couponCode": null,
   "warnings": [ { "code": "PRICE_CHANGED", "itemId": 1201, "sku": "ORB-42-GLD", "detail": "The price went up since you added this" } ],
   "checkoutReady": true
 }
@@ -1212,7 +1222,7 @@ Send this back as `X-Guest-Token` on every subsequent cart, shipping-quote and c
 ```json
 {
   "cartId": 501, "items": [], "itemCount": 0, "totalQuantity": 0,
-  "subtotal": 0.0000, "discountTotal": 0.0000, "estimatedTotal": 0.0000, "taxIncluded": 0.0000,
+  "subtotal": 0.0000, "discountTotal": 0.0000, "assemblyTotal": 0.0000, "estimatedTotal": 0.0000, "taxIncluded": 0.0000,
   "couponCode": null, "warnings": [], "checkoutReady": false
 }
 ```
@@ -1286,6 +1296,7 @@ Supply either `addressId` (signed-in) or `address` inline (required for guest ch
   "shippingCapApplied": false, "shippingUncappedCost": 0.0000,
   "shippingBreakdown": [ { "sizeClass": "SMALL", "quantity": 1, "unitCost": 0.0000, "lineCost": 0.0000 } ],
   "codFee": 25.0000,
+  "assemblyTotal": 0.0000,
   "grandTotal": 8525.0000, "taxTotal": 1108.7000, "netTotal": 7416.3000,
   "contactName": "Mohammed Hassan", "contactPhone": "+201012345678", "contactAltPhone": null, "contactEmail": "mohammed316@gmail.com",
   "shippingAddress": {
@@ -1302,7 +1313,7 @@ Supply either `addressId` (signed-in) or `address` inline (required for guest ch
       "name": "Orient Bambino Classic", "sku": "ORB-42-GLD", "variantSummary": "ذهبي / 42 مم",
       "imageUrl": "https://cdn.velora.com/products/40/main.jpg",
       "unitPrice": 8500.0000, "quantity": 1, "lineDiscount": 0.0000, "allocatedCartDiscount": 0.0000,
-      "lineTotal": 8500.0000, "taxAmount": 1108.7000, "quantityReturned": 0, "returnableQuantity": 1
+      "lineTotal": 8500.0000, "taxAmount": 1108.7000, "assemblyFee": 0.0000, "assemblyTotal": 0.0000, "quantityReturned": 0, "returnableQuantity": 1
     }
   ],
   "totalQuantity": 1,
@@ -1380,6 +1391,7 @@ Base path: `/api/v1/me/orders` (customer), `/api/v1/admin/orders` (admin)
   "subtotal": 19500.0000, "discountTotal": 1500.0000, "shippingCost": 150.0000,
   "shippingCapApplied": false, "shippingUncappedCost": null, "shippingBreakdown": null,
   "codFee": 50.0000,
+  "assemblyTotal": 0.0000,
   "grandTotal": 18450.0000, "taxTotal": 2405.2174, "netTotal": 16044.7826,
   "contactName": "Mohammed Hassan", "contactPhone": "01012345678", "contactAltPhone": null, "contactEmail": "mohammed316@gmail.com",
   "shippingAddress": {
@@ -1396,7 +1408,7 @@ Base path: `/api/v1/me/orders` (customer), `/api/v1/admin/orders` (admin)
       "name": "ساعة فيلورا كلاسيك 42 مم", "sku": "VLR-WATCH-CLS-42-GLD", "variantSummary": "ذهبي / 42 مم",
       "imageUrl": "https://cdn.velora.com/products/watch-42mm-gold.jpg",
       "unitPrice": 9750.0000, "quantity": 2, "lineDiscount": 0.0000, "allocatedCartDiscount": 1500.0000,
-      "lineTotal": 19500.0000, "taxAmount": 2405.2174, "quantityReturned": 0, "returnableQuantity": 2
+      "lineTotal": 19500.0000, "taxAmount": 2405.2174, "assemblyFee": 0.0000, "assemblyTotal": 0.0000, "quantityReturned": 0, "returnableQuantity": 2
     }
   ],
   "totalQuantity": 2,
@@ -1564,6 +1576,15 @@ Legal transitions:
 **Success response `200`:** `OrderResponse` with `fulfillmentStatus: "CANCELLED"`, `cancelledAt` set, `cancelReason` populated, new timeline entry.
 
 **Error responses:** `400 VALIDATION_FAILED`, `404 ORDER_NOT_FOUND`, `409 INVALID_STATUS_TRANSITION`.
+
+### Assembly fee (money rules)
+
+- `assemblyFee` lives on the **product** (`requiresAssembly` + a per-piece, tax-inclusive fee). A line's assembly is `assemblyFee × quantity`; the order's `assemblyTotal` is the sum over its lines.
+- It is **frozen at purchase**: `order_item.assemblyFee` (per piece) and `order.assemblyTotal`. Editing the product afterwards never changes an existing order.
+- It is part of `grandTotal` (`subtotal − discount + shippingCost + codFee + assemblyTotal`). It is **outside the cart discount**: the discount applies to goods only and none of it is allocated to assembly. `subtotal` stays goods-only.
+- Tax is **extracted**, not added: per line, at that line's own `tax_rate`, then summed into `taxTotal`. `netTotal = grandTotal − taxTotal`. **Pending accountant confirmation** that assembly is taxable at the goods rate (marked `TODO(accountant)` in `CheckoutService`); shipping and the COD fee are still treated as untaxed.
+- Assembly is not refunded by a partial return automatically (a return refunds goods value only) — decide that with the accountant before fees are non-zero.
+- Fees are `0` for now, so every figure is unchanged until a fee is set.
 
 ---
 
@@ -1804,6 +1825,8 @@ Base path: `/api/v1/admin/invoices` (admin), `/api/v1/me/invoices` (customer)
 
 Invoices are **immutable once issued** — there is no update endpoint. Numbering (`VLR-INV-{year}-{sequence}`) is gapless and issued automatically when an order reaches `DELIVERED`; the admin `issue` endpoint exists only to catch orders that slipped through, and is idempotent. The only correction mechanism exposed is **cancellation** (a status flag — the row and number are never removed); there is no separate credit-note endpoint here. No dedicated `INVOICE_NOT_FOUND` code exists — a missing/inaccessible invoice uses the generic `RESOURCE_NOT_FOUND`.
 
+**Assembly and COD fee on the invoice and PDF.** `assemblyTotal` and `codFee` are frozen onto the invoice from the order when it is issued (columns `invoice.assembly_total`, `invoice.cod_fee`; invoices issued before they existed were backfilled from their order). The PDF shows a **التركيب** row and a **رسوم الدفع عند الاستلام** row after the shipping row, each **only when above zero**. Both are inside `grandTotal`; the assembly's tax is inside `taxTotal`.
+
 ### AdminInvoiceController
 
 #### `GET /api/v1/admin/invoices`
@@ -1910,6 +1933,7 @@ Response language follows `Accept-Language` (`ar` default, or `en`) — not a qu
 3. `uncappedCost` is the sum of those lines.
 4. If the zone has a `maxShippingCost` and `uncappedCost` is **above** it, `shippingCost` is the cap and `shippingCapApplied` is `true`. Otherwise `shippingCost = uncappedCost`. A total exactly equal to the cap is not "capped".
 5. `codFee` is added on top of `shippingCost` in `estimatedTotal` and is never capped.
+6. `assemblyTotal` — the per-piece assembly fee × quantity of every cart line whose product requires assembly — is added to `estimatedTotal` as well (`subtotal + assemblyTotal + shippingCost + codFee`). It is `0` when nothing in the cart needs assembly. It is not shipping and is never capped.
 
 `breakdown` always shows the real, uncapped lines (largest size first) so the screen can explain the number. Weight and the old free-shipping threshold are **no longer used**: `totalWeightGrams` is informational, `freeShippingThreshold` and `amountToFreeShipping` are always `null`, and `freeShippingApplied` is simply "`shippingCost` is zero" (Greater Cairo — free for every cart, no minimum).
 
@@ -1942,7 +1966,7 @@ Initial prices, EGP per unit, cap 1500 in every zone:
     { "sizeClass": "LARGE", "quantity": 4, "unitCost": "550.00", "lineCost": "2200.00" },
     { "sizeClass": "SMALL", "quantity": 5, "unitCost": "150.00", "lineCost": "750.00" }
   ],
-  "codFee": "0.00",
+  "codFee": "0.00", "assemblyTotal": "0.00",
   "freeShippingApplied": false, "freeShippingThreshold": null, "amountToFreeShipping": null,
   "deliveryDaysMin": 2, "deliveryDaysMax": 5,
   "orderSubtotal": "42000.00", "totalWeightGrams": 3400, "estimatedTotal": "43500.00"
@@ -2429,7 +2453,7 @@ Both endpoints return a downloadable file, not JSON.
 **Shared query params (`OrderExportFilter`):** `dateFrom`/`dateTo` (`yyyy-MM-dd`, inclusive), `fulfillmentStatus`, `paymentStatus`, `governorateId`, `excludeCancelled` (default `true`).
 
 ### `GET /api/v1/admin/exports/orders/accounting`
-**Summary:** Accounting archive as `.xlsx` — one row per order plus a totals row (customer, governorate, subtotal, discount, shipping, grand total, tax, net). RTL sheet, real numbers. Capped at 5,000 rows; cancelled orders excluded by default.
+**Summary:** Accounting archive as `.xlsx` — one row per order plus a totals row (customer, governorate, subtotal, discount, shipping, assembly, COD fee, grand total, tax, net). Columns in order: ... الإجمالي الفرعي، الخصم، الشحن، **التركيب**، **رسوم الدفع عند الاستلام**، الإجمالي، منه ضريبة، الصافي ...; the totals row sums the same columns.) RTL sheet, real numbers. Capped at 5,000 rows; cancelled orders excluded by default.
 
 **Success response `200`:** binary `.xlsx`. `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; `Content-Disposition: attachment; filename="velora-orders-<dateFrom>_<dateTo>.xlsx"` (or `velora-orders-<today>.xlsx`).
 

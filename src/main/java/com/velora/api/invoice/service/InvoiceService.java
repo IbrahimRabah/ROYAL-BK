@@ -135,6 +135,8 @@ public class InvoiceService {
         invoice.setSubtotalGross(order.getSubtotalGross());
         invoice.setDiscountTotal(order.getDiscountTotal());
         invoice.setShippingCost(order.getShippingCost());
+        invoice.setCodFee(order.getCodFee());
+        invoice.setAssemblyTotal(order.getAssemblyTotal());
         invoice.setGrandTotal(order.getGrandTotal());
         invoice.setTaxTotal(order.getTaxTotal());
         invoice.setNetTotal(order.getNetTotal());
@@ -343,6 +345,8 @@ private byte[] renderPdf(Invoice invoice) {
                 invoice.getSubtotalGross(),
                 invoice.getDiscountTotal(),
                 invoice.getShippingCost(),
+                invoice.getCodFee(),
+                invoice.getAssemblyTotal(),
                 invoice.getNetTotal(),
                 invoice.getTaxTotal(),
                 invoice.getGrandTotal(),

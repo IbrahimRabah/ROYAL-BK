@@ -4,8 +4,11 @@ import com.velora.api.catalog.domain.FulfillmentType;
 import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
 import java.util.List;
 
 @Schema(description = "Create a product. Variants are added separately.")
@@ -36,8 +39,26 @@ public record ProductCreateRequest(
         FulfillmentType fulfillmentType,
 
         @Schema(description = "Required when fulfillmentType is READY_MADE")
-        ShippingSizeClass shippingSizeClass
+        ShippingSizeClass shippingSizeClass,
+
+        @Schema(description = "The piece has to be assembled on delivery. Defaults to false.")
+        Boolean requiresAssembly,
+
+        @Schema(description = "Assembly fee PER PIECE, tax-inclusive. Defaults to 0. Only charged when "
+                + "requiresAssembly is true.")
+        @DecimalMin(value = "0", message = "The assembly fee cannot be negative")
+        @Digits(integer = 15, fraction = 4)
+        BigDecimal assemblyFee
 ) {
+
+    /** A product with no assembly: what every caller did before the fee existed. */
+    public ProductCreateRequest(Long categoryId, Long brandId, String slug,
+                                List<TranslationRequest> translations, boolean featured,
+                                boolean newArrival, List<SpecificationRequest> specifications,
+                                FulfillmentType fulfillmentType, ShippingSizeClass shippingSizeClass) {
+        this(categoryId, brandId, slug, translations, featured, newArrival, specifications,
+                fulfillmentType, shippingSizeClass, null, null);
+    }
 
     @Schema(description = "One specification row")
     public record SpecificationRequest(

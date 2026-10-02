@@ -122,6 +122,7 @@ public class ShippingService {
         int weight = weightOf(cart);
 
         var calculation = calculator.calculate(rates, shippingLinesOf(cart), codApplies);
+        BigDecimal assembly = assemblyOf(cart);
 
         return new ShippingQuoteResponse(
                 governorate.getId(),
@@ -132,6 +133,7 @@ public class ShippingService {
                 calculation.uncappedCost(),
                 calculation.breakdown(),
                 calculation.codFee(),
+                assembly,
                 calculation.freeShippingApplied(),
                 null,
                 null,
@@ -139,7 +141,7 @@ public class ShippingService {
                 rates.deliveryDaysMax(),
                 subtotal,
                 weight,
-                MoneyUtils.round(subtotal.add(calculation.totalDeliveryCharge())));
+                MoneyUtils.round(subtotal.add(assembly).add(calculation.totalDeliveryCharge())));
     }
 
     /**
@@ -199,6 +201,16 @@ public class ShippingService {
                     item.getVariant().getSku()));
         }
         return lines;
+    }
+
+    /** Per-piece assembly fee x quantity over the whole cart — the same rule checkout applies. */
+    private BigDecimal assemblyOf(Cart cart) {
+        BigDecimal total = MoneyUtils.ZERO;
+        for (CartItem item : cart.getItems()) {
+            total = total.add(MoneyUtils.lineTotal(
+                    item.getVariant().getProduct().effectiveAssemblyFee(), item.getQuantity()));
+        }
+        return MoneyUtils.round(total);
     }
 
     /** Priced from the CURRENT variant price, exactly like the cart does. */

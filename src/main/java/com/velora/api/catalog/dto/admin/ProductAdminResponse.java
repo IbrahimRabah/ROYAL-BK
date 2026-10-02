@@ -30,6 +30,11 @@ public record ProductAdminResponse(
         boolean newArrival,
         FulfillmentType fulfillmentType,
         ShippingSizeClass shippingSizeClass,
+        @Schema(description = "The piece has to be assembled on delivery")
+        boolean requiresAssembly,
+        @Schema(description = "The STORED assembly fee PER PIECE, tax-inclusive. May be non-zero while "
+                + "requiresAssembly is false (nothing is charged then) so an edit form round-trips.")
+        BigDecimal assemblyFee,
         @Schema(description = "Informational specifications — movement, water resistance, "
                 + "strap material. Load this into the edit form and send it back whole; a "
                 + "response missing this field would round-trip as the specifications being "

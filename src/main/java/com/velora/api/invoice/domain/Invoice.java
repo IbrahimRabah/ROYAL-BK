@@ -102,6 +102,14 @@ public class Invoice {
     @Column(name = "shipping_cost", nullable = false, precision = 19, scale = 4)
     private BigDecimal shippingCost = BigDecimal.ZERO;
 
+    /** Cash-on-delivery fee, frozen from the order. Shown only when above zero. */
+    @Column(name = "cod_fee", nullable = false, precision = 19, scale = 4)
+    private BigDecimal codFee = BigDecimal.ZERO;
+
+    /** Assembly charged, frozen from the order. Shown only when above zero. */
+    @Column(name = "assembly_total", nullable = false, precision = 19, scale = 4)
+    private BigDecimal assemblyTotal = BigDecimal.ZERO;
+
     @Column(name = "grand_total", nullable = false, precision = 19, scale = 4)
     private BigDecimal grandTotal;
 

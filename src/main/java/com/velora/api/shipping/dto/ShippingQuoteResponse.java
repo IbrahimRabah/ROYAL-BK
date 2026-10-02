@@ -34,6 +34,10 @@ public record ShippingQuoteResponse(
         @Schema(description = "Extra charge for cash collection. Zero today.")
         BigDecimal codFee,
 
+        @Schema(description = "Assembly for the pieces that need it (fee x quantity), tax-inclusive. "
+                + "Zero when nothing in the cart is assembled.")
+        BigDecimal assemblyTotal,
+
         @Schema(description = "True when shippingCost is zero (e.g. Greater Cairo)")
         boolean freeShippingApplied,
 
@@ -52,7 +56,7 @@ public record ShippingQuoteResponse(
         @Schema(description = "Cart weight in grams. Informational — it does not affect the price")
         int totalWeightGrams,
 
-        @Schema(description = "subtotal + shipping + COD fee")
+        @Schema(description = "subtotal + assembly + shipping + COD fee")
         BigDecimal estimatedTotal
 ) {
 }

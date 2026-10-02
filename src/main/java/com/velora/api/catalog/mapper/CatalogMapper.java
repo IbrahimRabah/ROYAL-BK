@@ -71,7 +71,9 @@ public class CatalogMapper {
                 product.isFeatured(),
                 product.isNewArrival(),
                 product.getFulfillmentType(),
-                product.getShippingSizeClass());
+                product.getShippingSizeClass(),
+                product.isRequiresAssembly(),
+                product.effectiveAssemblyFee());
     }
 
     public ProductDetailResponse toDetail(Product product,
@@ -103,6 +105,8 @@ public class CatalogMapper {
                 product.isNewArrival(),
                 product.getFulfillmentType(),
                 product.getShippingSizeClass(),
+                product.isRequiresAssembly(),
+                product.effectiveAssemblyFee(),
                 new ProductDetailResponse.SeoResponse(
                         translation == null ? null : translation.getMetaTitle(),
                         translation == null ? null : translation.getMetaDescription(),
