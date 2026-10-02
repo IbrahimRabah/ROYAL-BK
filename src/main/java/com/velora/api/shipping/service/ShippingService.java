@@ -149,8 +149,11 @@ public class ShippingService {
     public ZoneRates requireRatesFor(Long governorateId) {
         List<ShippingRate> found = rateRepository.findAllForGovernorate(governorateId);
         if (found.isEmpty()) {
-            throw new BusinessException(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED,
-                    "No shipping rate is configured for this governorate");
+            // A governorate in no zone (or in a zone with no rates) is simply one we do
+            // not deliver to — the same answer the quote and the address form give.
+            // A zone that has rates but lacks one SIZE is a different problem, and
+            // ShippingCalculator reports that as SHIPPING_RATE_NOT_CONFIGURED.
+            throw new BusinessException(ErrorCode.GOVERNORATE_NOT_SERVED);
         }
         return new ZoneRates(found);
     }

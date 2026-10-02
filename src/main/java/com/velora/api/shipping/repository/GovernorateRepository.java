@@ -9,5 +9,7 @@ public interface GovernorateRepository extends JpaRepository<Governorate, Long> 
 
     List<Governorate> findByActiveTrueOrderByDisplayOrderAsc();
 
+    List<Governorate> findAllByOrderByDisplayOrderAsc();
+
     Optional<Governorate> findByCode(String code);
 }

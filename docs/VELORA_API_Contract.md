@@ -1315,7 +1315,7 @@ Supply either `addressId` (signed-in) or `address` inline (required for guest ch
 | 401 | TOKEN_INVALID | `X-Guest-Token` signature is wrong, or unsigned and the transition flag is off |
 | 404 | RESOURCE_NOT_FOUND | `addressId` / `governorateId` doesn't exist, or a saved address doesn't belong to the caller (identical 404 either way) |
 | 409 | STOCK_UNAVAILABLE | A cart line blocks checkout (out of stock, quantity reduced, reservation could not be granted) |
-| 409 | GOVERNORATE_NOT_SERVED | VELORA does not deliver to the given governorate |
+| 409 | GOVERNORATE_NOT_SERVED | VELORA does not deliver to the given governorate — it is closed (in no shipping zone, or in a zone with no rates). Checked for inline addresses and for a saved `addressId` alike, so an address saved before its governorate closed is refused too. Raised before stock is reserved |
 | 409 | SHIPPING_SIZE_MISSING | A cart line's product has no `shippingSizeClass`; the `detail` names the SKU. Raised before stock is reserved, so nothing is held |
 | 409 | SHIPPING_RATE_NOT_CONFIGURED | The resolved zone has no rate for a size class in the cart |
 | 409 | PAYMENT_METHOD_UNAVAILABLE | `paymentMethod` is set to anything other than `COD` |
@@ -1586,7 +1586,7 @@ Address phone fields are normalized to E.164 on write but rendered back in local
 | 400 | VALIDATION_FAILED | Bean validation fails, or the customer already has 10 saved addresses |
 | 400 | INVALID_PHONE_FORMAT | `phone`/`altPhone` doesn't normalize to a valid Egyptian mobile number |
 | 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't exist |
-| 409 | GOVERNORATE_NOT_SERVED | Governorate exists but has no configured shipping rate |
+| 409 | GOVERNORATE_NOT_SERVED | The governorate is closed for delivery (in no shipping zone). Applies to `PUT` as well |
 
 ---
 
@@ -1884,8 +1884,8 @@ Initial prices, EGP per unit, cap 1500 in every zone:
 | `DELTA` | 100 | 200 | 400 |
 | `ALEXANDRIA` | 120 | 250 | 450 |
 | `CANAL` (Port Said, Ismailia, Suez) | 120 | 250 | 450 |
-| `UPPER_EGYPT` | 150 | 300 | 550 |
-| `REMOTE` (Sinai, Red Sea, New Valley, Matrouh) | 200 | 400 | 700 |
+| `UPPER_EGYPT` (Beni Suef, Faiyum, Minya, Asyut, Sohag, Qena) | 150 | 300 | 550 |
+| `REMOTE` (North Sinai, Red Sea, New Valley, Matrouh) | 200 | 400 | 700 |
 
 `REMOTE` is an estimate pending a courier contract. Admin can change any of these — see `PUT /api/v1/admin/shipping/rates`.
 
@@ -1920,7 +1920,7 @@ Initial prices, EGP per unit, cap 1500 in every zone:
 | 400 | CART_EMPTY | No cart could be resolved, or the resolved/explicit cart isn't `ACTIVE` |
 | 401 | TOKEN_INVALID | `X-Guest-Token` signature is wrong, or unsigned and the transition flag is off |
 | 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't match any governorate |
-| 409 | GOVERNORATE_NOT_SERVED | Governorate exists but has no configured shipping rate |
+| 409 | GOVERNORATE_NOT_SERVED | The governorate is closed for delivery (in no shipping zone, or in a zone with no rates) |
 | 409 | SHIPPING_SIZE_MISSING | A cart line's product has no `shippingSizeClass`; the `detail` names the SKU. Never guessed — the product needs a size set in the admin |
 | 409 | SHIPPING_RATE_NOT_CONFIGURED | The destination zone has no rate for a size class present in the cart |
 
@@ -1944,9 +1944,10 @@ Initial prices, EGP per unit, cap 1500 in every zone:
     ],
     "maxShippingCost": "1500.00", "deliveryDaysMin": 1, "deliveryDaysMax": 3, "served": true
   },
-  { "id": 24, "code": "WAD", "name": "الوادي الجديد", "zoneName": null, "shippingRates": [], "maxShippingCost": null, "deliveryDaysMin": null, "deliveryDaysMax": null, "served": false }
+  { "id": 16, "code": "SSI", "name": "جنوب سيناء", "zoneName": null, "shippingRates": [], "maxShippingCost": null, "deliveryDaysMin": null, "deliveryDaysMax": null, "served": false }
 ]
 ```
+**Currently closed** (`served: false`): **South Sinai (`SSI`), Aswan (`ASW`) and Luxor (`LUX`)**. South Sinai is closed as a whole — the schema has no city level, so Sharm El-Sheikh cannot be closed on its own, and Dahab, Nuweiba, Taba, Ras Sudr and Saint Catherine are closed with it. Closed governorates stay in this list so the address form can show them and say "we don't deliver there"; the client should read `served`, never hard-code the three. `POST /api/v1/shipping/quote`, `POST /api/v1/orders` and `POST`/`PUT /api/v1/me/addresses` all refuse them with `409 GOVERNORATE_NOT_SERVED`. Staff can reopen or close governorates from the admin panel — see `PUT`/`DELETE /api/v1/admin/shipping/governorates/{governorateId}/zone`.
 `shippingRates` is the cost of **one unit** of each size class (replaces the single `shippingCost` field, which was removed). The final price for a cart comes from `POST /api/v1/shipping/quote`.
 
 ---
@@ -1978,6 +1979,51 @@ Initial prices, EGP per unit, cap 1500 in every zone:
 ]
 ```
 `rates` holds the cost of **one unit** per size class and is empty (and `codFee` `null`, delivery days `0`) when the zone has no active rate yet. `baseCost` and `freeShippingOver` were removed from this response.
+
+---
+
+#### `GET /api/v1/admin/shipping/governorates`
+**Summary:** Every governorate, served or closed, with the zone it is in. Unlike `GET /zones` — which only lists governorates that are inside a zone — this includes the closed ones, so the panel can offer to reopen them. Plain array, 27 items, in display order.
+
+**Success response `200`:**
+```json
+[
+  { "id": 1, "code": "CAI", "nameAr": "القاهرة", "nameEn": "Cairo", "zoneId": 1, "zoneCode": "GREATER_CAIRO", "served": true },
+  { "id": 24, "code": "ASW", "nameAr": "أسوان", "nameEn": "Aswan", "zoneId": null, "zoneCode": null, "served": false }
+]
+```
+`served` is `true` when the governorate is in an active zone that has rates. A governorate that is closed has `zoneId` and `zoneCode` `null`.
+
+---
+
+#### `PUT /api/v1/admin/shipping/governorates/{governorateId}/zone`
+**Summary:** Open a governorate for delivery by putting it in a zone — or move it to a different zone. A governorate belongs to exactly one zone, so the URL is the governorate's, not the zone's, and there is no way to put it in two. Idempotent: assigning it to the zone it is already in changes nothing.
+
+**Request body:**
+```json
+{ "zoneId": 5 }
+```
+`zoneId` required. The zone must be active and must have an active rate for **every** size class (`SMALL`, `MEDIUM`, `LARGE`) — otherwise the governorate would look open here and still fail at the customer's checkout.
+
+**Success response `200`:** empty body. Takes effect immediately for quotes, checkout and new addresses.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `zoneId` missing |
+| 404 | RESOURCE_NOT_FOUND | `governorateId` or `zoneId` doesn't exist (an inactive zone counts as not found) |
+| 409 | SHIPPING_RATE_NOT_CONFIGURED | The zone has no active rate for one or more size classes; the governorate is left as it was |
+
+---
+
+#### `DELETE /api/v1/admin/shipping/governorates/{governorateId}/zone`
+**Summary:** Close a governorate for delivery by removing it from its zone. The governorate stays active and stays in `GET /api/v1/geo/governorates` with `served: false`; quote, checkout and saved addresses refuse it with `409 GOVERNORATE_NOT_SERVED`. Idempotent: closing one that is already closed succeeds. Reopen it with the `PUT` above.
+
+An address a customer saved *before* the governorate closed is not deleted; it is simply refused at checkout until the governorate reopens.
+
+**Success response `200`:** empty body.
+
+**Error responses:** `404 RESOURCE_NOT_FOUND` — `governorateId` doesn't exist.
 
 ---
 

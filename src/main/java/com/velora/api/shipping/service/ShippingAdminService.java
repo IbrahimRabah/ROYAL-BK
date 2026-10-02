@@ -3,14 +3,18 @@ package com.velora.api.shipping.service;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.util.MoneyUtils;
+import com.velora.api.catalog.domain.ShippingSizeClass;
+import com.velora.api.shipping.domain.Governorate;
 import com.velora.api.shipping.domain.ShippingRate;
 import com.velora.api.shipping.domain.ShippingZone;
+import com.velora.api.shipping.dto.AdminGovernorateResponse;
 import com.velora.api.shipping.dto.MaxShippingCostRequest;
 import com.velora.api.shipping.dto.ShippingRateRequest;
 import com.velora.api.shipping.dto.ShippingZoneResponse;
 import com.velora.api.shipping.dto.SizeRateResponse;
 import com.velora.api.shipping.repository.GovernorateRepository;
 import com.velora.api.shipping.repository.ShippingRateRepository;
+import com.velora.api.shipping.repository.ShippingZoneGovernorateRepository;
 import com.velora.api.shipping.repository.ShippingZoneRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,13 +38,16 @@ public class ShippingAdminService {
     private final ShippingZoneRepository zoneRepository;
     private final ShippingRateRepository rateRepository;
     private final GovernorateRepository governorateRepository;
+    private final ShippingZoneGovernorateRepository zoneGovernorateRepository;
 
     public ShippingAdminService(ShippingZoneRepository zoneRepository,
                                 ShippingRateRepository rateRepository,
-                                GovernorateRepository governorateRepository) {
+                                GovernorateRepository governorateRepository,
+                                ShippingZoneGovernorateRepository zoneGovernorateRepository) {
         this.zoneRepository = zoneRepository;
         this.rateRepository = rateRepository;
         this.governorateRepository = governorateRepository;
+        this.zoneGovernorateRepository = zoneGovernorateRepository;
     }
 
     @Transactional(readOnly = true)
@@ -155,6 +162,89 @@ public class ShippingAdminService {
         zoneRepository.save(zone);
         log.info("Shipping cap for zone {} changed from {} to {}",
                 zone.getCode(), previous, request.maxShippingCost());
+    }
+
+    // ------------------------------------------------------------ governorates
+
+    /**
+     * Every governorate, served or not — the panel needs the closed ones in order to
+     * reopen them, and {@link #listZones()} only shows governorates that are inside a
+     * zone.
+     */
+    @Transactional(readOnly = true)
+    public List<AdminGovernorateResponse> listGovernorates() {
+        List<AdminGovernorateResponse> result = new ArrayList<>();
+        for (Governorate governorate : governorateRepository.findAllByOrderByDisplayOrderAsc()) {
+            ShippingZone zone = zoneGovernorateRepository
+                    .findZoneIdByGovernorateId(governorate.getId())
+                    .flatMap(zoneRepository::findById)
+                    .orElse(null);
+            boolean served = !rateRepository.findAllForGovernorate(governorate.getId()).isEmpty();
+
+            result.add(new AdminGovernorateResponse(
+                    governorate.getId(),
+                    governorate.getCode(),
+                    governorate.getNameAr(),
+                    governorate.getNameEn(),
+                    zone == null ? null : zone.getId(),
+                    zone == null ? null : zone.getCode(),
+                    served));
+        }
+        return result;
+    }
+
+    /**
+     * Opens a governorate for delivery by putting it in a zone, or moves it to another
+     * zone. Idempotent: assigning it to the zone it is already in changes nothing.
+     *
+     * <p>Refuses a zone that cannot price every size class. Otherwise the governorate
+     * would look open on this screen and still fail at the customer's checkout, which is
+     * exactly the half-open state this feature exists to prevent.
+     */
+    @Transactional
+    public void assignGovernorate(Long governorateId, Long zoneId) {
+        Governorate governorate = loadGovernorate(governorateId);
+        ShippingZone zone = loadZone(zoneId);
+        if (!zone.isActive()) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "Shipping zone not found");
+        }
+
+        List<ShippingRate> rates =
+                rateRepository.findByZoneIdAndActiveTrueOrderBySizeClassAsc(zone.getId());
+        if (rates.size() < ShippingSizeClass.values().length) {
+            throw new BusinessException(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED,
+                    "Zone %s has no active rate for every size class, so it cannot take "
+                            .formatted(zone.getCode()) + "governorates yet");
+        }
+
+        Long previousZoneId = zoneGovernorateRepository
+                .findZoneIdByGovernorateId(governorate.getId()).orElse(null);
+        if (previousZoneId == null) {
+            zoneGovernorateRepository.insert(governorate.getId(), zone.getId());
+        } else if (!previousZoneId.equals(zone.getId())) {
+            zoneGovernorateRepository.moveToZone(governorate.getId(), zone.getId());
+        }
+
+        log.info("Governorate {} assigned to zone {} (was {})",
+                governorate.getCode(), zone.getCode(), previousZoneId);
+    }
+
+    /**
+     * Closes a governorate: removes it from its zone, so it is no longer served. The
+     * governorate itself stays active and listed (as {@code served: false}). Idempotent.
+     */
+    @Transactional
+    public void closeGovernorate(Long governorateId) {
+        Governorate governorate = loadGovernorate(governorateId);
+        int removed = zoneGovernorateRepository.deleteByGovernorateId(governorate.getId());
+        log.info("Governorate {} closed for delivery (was in a zone: {})",
+                governorate.getCode(), removed > 0);
+    }
+
+    private Governorate loadGovernorate(Long governorateId) {
+        return governorateRepository.findById(governorateId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
+                        "Governorate not found"));
     }
 
     private ShippingZone loadZone(Long zoneId) {

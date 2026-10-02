@@ -1,5 +1,7 @@
 package com.velora.api.shipping.web;
 
+import com.velora.api.shipping.dto.AdminGovernorateResponse;
+import com.velora.api.shipping.dto.AssignZoneRequest;
 import com.velora.api.shipping.dto.MaxShippingCostRequest;
 import com.velora.api.shipping.dto.ShippingRateRequest;
 import com.velora.api.shipping.dto.ShippingZoneResponse;
@@ -10,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -47,6 +50,41 @@ public class AdminShippingController {
     @PutMapping("/rates")
     public Map<String, Long> saveRate(@Valid @RequestBody ShippingRateRequest request) {
         return Map.of("id", shippingAdminService.saveRate(request));
+    }
+
+    @Operation(summary = "List every governorate, served or closed",
+            description = "Unlike the zones list, this includes governorates that are in no "
+                    + "zone — the ones we do not deliver to — so they can be reopened.")
+    @GetMapping("/governorates")
+    public List<AdminGovernorateResponse> governorates() {
+        return shippingAdminService.listGovernorates();
+    }
+
+    @Operation(summary = "Open a governorate for delivery, or move it to another zone",
+            description = """
+                    Puts the governorate in the given zone. A governorate belongs to exactly
+                    one zone, so this either opens a closed governorate or moves an open one.
+                    Idempotent.
+
+                    The zone must have a rate for every size class, otherwise the governorate
+                    would look open here and still fail at checkout (409
+                    SHIPPING_RATE_NOT_CONFIGURED).
+                    """)
+    @PutMapping("/governorates/{governorateId}/zone")
+    public void assignGovernorate(@PathVariable Long governorateId,
+                                  @Valid @RequestBody AssignZoneRequest request) {
+        shippingAdminService.assignGovernorate(governorateId, request.zoneId());
+    }
+
+    @Operation(summary = "Close a governorate for delivery",
+            description = """
+                    Removes the governorate from its zone. It stays in the governorate list
+                    with `served: false`; quote, checkout and saved addresses refuse it with
+                    GOVERNORATE_NOT_SERVED. Idempotent. Reopen it with the PUT above.
+                    """)
+    @DeleteMapping("/governorates/{governorateId}/zone")
+    public void closeGovernorate(@PathVariable Long governorateId) {
+        shippingAdminService.closeGovernorate(governorateId);
     }
 
     @Operation(summary = "Set or clear a zone's shipping cap",
