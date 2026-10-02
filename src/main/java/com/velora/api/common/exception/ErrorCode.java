@@ -122,6 +122,14 @@ public enum ErrorCode {
     ORDER_NOT_FOUND("Order not found", HttpStatus.NOT_FOUND),
     INVALID_STATUS_TRANSITION("This status change is not allowed", HttpStatus.CONFLICT),
     ORDER_CANNOT_BE_CANCELLED("This order can no longer be cancelled", HttpStatus.CONFLICT),
+    /**
+     * AWAITING_SCHEDULE to PROCESSING without a delivery date. Its own code, not
+     * INVALID_STATUS_TRANSITION: the move is allowed, something is missing, and the message
+     * says what to do. A generic "not allowed" sends staff looking in the wrong place.
+     */
+    DELIVERY_NOT_SCHEDULED("Set the delivery date before processing this order "
+            + "(PATCH /api/v1/admin/orders/{id}/schedule)", HttpStatus.CONFLICT),
+    ORDER_NOT_SCHEDULABLE("A delivery date cannot be set on this order", HttpStatus.CONFLICT),
     RETURN_WINDOW_CLOSED("The return period for this order has ended", HttpStatus.CONFLICT),
     RETURN_QUANTITY_EXCEEDED("You cannot return more than you ordered", HttpStatus.BAD_REQUEST),
     DUPLICATE_ORDER("This order has already been submitted", HttpStatus.CONFLICT),

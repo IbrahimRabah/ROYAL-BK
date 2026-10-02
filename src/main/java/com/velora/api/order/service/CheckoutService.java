@@ -36,6 +36,8 @@ import com.velora.api.shipping.service.ShippingCalculator;
 import com.velora.api.shipping.service.ShippingService;
 import com.velora.api.shipping.service.ZoneRates;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +69,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class CheckoutService {
 
     private static final Logger log = LoggerFactory.getLogger(CheckoutService.class);
+
+    private static final ZoneId CAIRO = ZoneId.of("Africa/Cairo");
+    private static final int MAX_PREFERRED_DELIVERY_DAYS_AHEAD = 90;
 
     private final CartService cartService;
     private final ReservationService reservationService;
@@ -120,6 +125,9 @@ public class CheckoutService {
     @Transactional
     public CustomerOrder placeOrder(Long userId, String guestToken,
                                     PlaceOrderRequest request, String locale) {
+
+        // 0. Cheap input checks first: nothing below should run for a request that is wrong.
+        validatePreferredDelivery(request);
 
         // 1. Cart — refuses if empty or if anything blocks checkout.
         Cart cart = cartService.loadForCheckout(userId, guestToken);
@@ -179,6 +187,8 @@ public class CheckoutService {
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setLocale(locale);
         order.setCustomerNote(request.customerNote());
+        order.setPreferredDeliveryDate(request.preferredDeliveryDate());
+        order.setPreferredDeliverySlot(request.preferredDeliverySlot());
 
         applyContactAndAddress(order, address, governorate, customer);
 
@@ -222,6 +232,38 @@ public class CheckoutService {
         eventPublisher.publishEvent(new OrderPlacedEvent(saved.getId()));
 
         return saved;
+    }
+
+    // ------------------------------------------------------- delivery preference
+
+    /**
+     * The customer's preferred delivery date is a wish, checked only for sanity: not in the
+     * past, and not so far ahead it is meaningless. It is deliberately NOT checked against the
+     * zone's {@code deliveryDaysMin}: that is a parcel-courier estimate, and when a piece of
+     * furniture is delivered is agreed with the customer by staff, not derived from it.
+     *
+     * <p>"Today" is the Cairo date: the customer asking at 1 a.m. for "today" means the day
+     * they are living in, not the one UTC is on.
+     */
+    private void validatePreferredDelivery(PlaceOrderRequest request) {
+        LocalDate date = request.preferredDeliveryDate();
+        if (request.preferredDeliverySlot() != null && date == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "A delivery time of day needs a delivery date");
+        }
+        if (date == null) {
+            return;
+        }
+        LocalDate today = LocalDate.now(CAIRO);
+        if (date.isBefore(today)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "The preferred delivery date cannot be in the past");
+        }
+        if (date.isAfter(today.plusDays(MAX_PREFERRED_DELIVERY_DAYS_AHEAD))) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "The preferred delivery date cannot be more than %d days ahead"
+                            .formatted(MAX_PREFERRED_DELIVERY_DAYS_AHEAD));
+        }
     }
 
     // ------------------------------------------------------------------- money

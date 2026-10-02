@@ -1266,10 +1266,14 @@ Turns a cart into an order in one transaction: reserves stock (guarded atomic up
     "landmark": "String — optional, max 255"
   },
   "paymentMethod": "String — optional, only 'COD' allowed, defaults to COD",
-  "customerNote": "String — optional, max 500"
+  "customerNote": "String — optional, max 500",
+  "preferredDeliveryDate": "String — optional, ISO date, e.g. 2026-10-20",
+  "preferredDeliverySlot": "String — optional: MORNING | AFTERNOON | EVENING. Needs preferredDeliveryDate"
 }
 ```
 Supply either `addressId` (signed-in) or `address` inline (required for guest checkout) — never both.
+
+**Delivery preference.** `preferredDeliveryDate` and `preferredDeliverySlot` are what the customer would *like*: a request, not a booking. Staff agree the real appointment with them afterwards (`scheduledDeliveryAt`, see `PATCH /admin/orders/{id}/schedule`), and that is what the customer is told. The date must be today or later (**Cairo date**) and no more than 90 days ahead; a slot without a date is refused — all `400 VALIDATION_FAILED`, before any stock is reserved. It is deliberately not checked against the zone's `deliveryDaysMin`/`deliveryDaysMax`: those are parcel-courier estimates, and when furniture is delivered is agreed with the customer, not derived from them. Both fields are optional, and an order without them is unchanged.
 
 **Shipping on the order** is calculated exactly as in `POST /api/v1/shipping/quote` (see that endpoint for the formula) and **frozen on the order**: `shippingCost`, `shippingCapApplied`, `shippingUncappedCost` and `shippingBreakdown` are a snapshot, so later price or cap changes never alter an existing order. Orders placed before shipping was priced per size class have `shippingBreakdown: null`, `shippingUncappedCost: null` and `shippingCapApplied: false` — render only `shippingCost` for those. `null` breakdown means "not recorded", not "no charge".
 
@@ -1290,6 +1294,7 @@ Supply either `addressId` (signed-in) or `address` inline (required for guest ch
     "landmark": "بجوار مسجد النور", "formatted": "12 شارع التسعين، مبنى 4، الدور 3، شقة 12، القاهرة الجديدة، القاهرة"
   },
   "shippingZoneName": "Greater Cairo", "deliveryDaysMin": 1, "deliveryDaysMax": 3,
+  "preferredDeliveryDate": "2026-10-20", "preferredDeliverySlot": "MORNING", "scheduledDeliveryAt": null,
   "customerNote": "اتصل قبل التوصيل",
   "items": [
     {
@@ -1331,7 +1336,7 @@ Base path: `/api/v1/me/orders` (customer), `/api/v1/admin/orders` (admin)
 
 `fulfillmentStatus` and `paymentStatus` are **two separate state machines** on every order. `fulfillmentStatus: DELIVERED` + `paymentStatus: PENDING` is the normal, correct state for a COD parcel awaiting courier cash remittance, not a bug.
 
-`fulfillmentStatus` values: `PENDING, CONFIRMED, PROCESSING, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, DELIVERY_FAILED, REFUSED_ON_DELIVERY, RETURNED_TO_SELLER, CANCELLED, RETURNED, PARTIALLY_RETURNED`.
+`fulfillmentStatus` values: `PENDING, CONFIRMED, AWAITING_SCHEDULE, PROCESSING, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, DELIVERY_FAILED, REFUSED_ON_DELIVERY, RETURNED_TO_SELLER, CANCELLED, RETURNED, PARTIALLY_RETURNED`.
 `paymentStatus` values: `PENDING, AUTHORIZED, PAID, PARTIALLY_REFUNDED, REFUNDED, FAILED, EXPIRED`.
 
 > **Scope note:** the domain model and error catalog (`RETURN_WINDOW_CLOSED`, `RETURN_QUANTITY_EXCEEDED`, `REFUND_EXCEEDS_ORDER_TOTAL`) anticipate customer-initiated returns and partial refunds, but no REST endpoint currently exercises them — there is no return/refund endpoint yet. Only pre-dispatch **cancellation** is exposed today.
@@ -1383,6 +1388,7 @@ Base path: `/api/v1/me/orders` (customer), `/api/v1/admin/orders` (admin)
     "formatted": "12 Abbas El Akkad St, building 12, floor 4, apt 9, Zone 7, Nasr City, Cairo (Near City Stars)"
   },
   "shippingZoneName": "Greater Cairo", "deliveryDaysMin": 1, "deliveryDaysMax": 3,
+  "preferredDeliveryDate": null, "preferredDeliverySlot": null, "scheduledDeliveryAt": "2026-08-12T10:00:00+03:00",
   "customerNote": "الرجاء الاتصال قبل الوصول",
   "items": [
     {
@@ -1469,7 +1475,8 @@ Legal transitions:
 | From | To (one of) |
 |---|---|
 | `PENDING` | `CONFIRMED`, `CANCELLED` |
-| `CONFIRMED` | `PROCESSING`, `CANCELLED` |
+| `CONFIRMED` | `AWAITING_SCHEDULE`, `PROCESSING`, `CANCELLED` |
+| `AWAITING_SCHEDULE` | `PROCESSING`, `CANCELLED` |
 | `PROCESSING` | `SHIPPED`, `CANCELLED` |
 | `SHIPPED` | `OUT_FOR_DELIVERY`, `DELIVERY_FAILED`, `RETURNED_TO_SELLER` |
 | `OUT_FOR_DELIVERY` | `DELIVERED`, `DELIVERY_FAILED`, `REFUSED_ON_DELIVERY` |
@@ -1494,6 +1501,33 @@ Legal transitions:
 | 400 | INVALID_PARAMETER | `status` not a recognized `FulfillmentStatus` |
 | 404 | ORDER_NOT_FOUND | No order with this id |
 | 409 | INVALID_STATUS_TRANSITION | Transition not allowed from the current status |
+| 409 | DELIVERY_NOT_SCHEDULED | `AWAITING_SCHEDULE` → `PROCESSING` while the order has no `scheduledDeliveryAt`. The move **is** allowed — a date is missing. Show the `detail` to the user and send them to `PATCH /schedule`; do not present it as a broken order |
+
+**`AWAITING_SCHEDULE`** sits between `CONFIRMED` and `PROCESSING`: confirmed, waiting for a delivery date to be agreed with the customer. For furniture the date is agreed *before* the goods leave the warehouse, because it decides when they ship. It is **optional** — `CONFIRMED` may go straight to `PROCESSING` with no date. Nothing has left the warehouse in this status, so the order can still be cancelled (by staff or by the customer) and its stock stays reserved for it; cancelling releases the reservation. It is the only status that needs a date to move on, and only towards `PROCESSING`. Everything after it is unchanged: `SHIPPED` still takes the stock for good, and `DELIVERED` still issues the invoice.
+
+---
+
+#### `PATCH /api/v1/admin/orders/{orderId}/schedule`
+**Summary:** Set or move the delivery appointment agreed with the customer. Audited (`ORDER_DELIVERY_SCHEDULED`, old and new, with who and why).
+
+**Request body:**
+```json
+{ "scheduledDeliveryAt": "2026-10-12T10:00:00+03:00", "note": "العميل طلب الخميس بعد الظهر" }
+```
+`scheduledDeliveryAt` required, an ISO-8601 date-time **with its UTC offset**, and **in the future**. `note` optional, max 500; it goes to the audit log (e.g. why the appointment moved).
+
+**It does not change the order's status.** An order in `AWAITING_SCHEDULE` stays there until staff move it on with `PATCH /fulfillment-status`, which now succeeds because the date is set. Setting the same date again changes nothing and records nothing.
+
+**Allowed in:** `CONFIRMED`, `AWAITING_SCHEDULE`, `PROCESSING`, `SHIPPED`, `OUT_FOR_DELIVERY`, `DELIVERY_FAILED`. The last one matters most: after a failed attempt, moving the appointment is the routine next step. **Refused in:** `PENDING` (confirm the order first) and every final status.
+
+**Success response `200`:** the full `OrderResponse`, with `scheduledDeliveryAt` set.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `scheduledDeliveryAt` missing, or not in the future |
+| 404 | ORDER_NOT_FOUND | No order with this id |
+| 409 | ORDER_NOT_SCHEDULABLE | The order is `PENDING` ("Confirm the order before setting its delivery date") or in a final status. The status is checked before the date, so a past date is only reported for an order that could be scheduled |
 
 ---
 
@@ -2312,6 +2346,10 @@ Base path: `/api/v1/admin/dashboard`
   "generatedAt": "2026-08-12T10:04:11Z"
 }
 ```
+`actionQueues` lists orders by status, **including `AWAITING_SCHEDULE`** ("بانتظار تحديد الموعد"), so orders waiting for a delivery date are visible rather than falling off the screen.
+
+`staleOrders` ("nothing has moved for 24 hours") covers `PENDING`, `CONFIRMED` and `PROCESSING`, and `AWAITING_SCHEDULE` **only while no `scheduledDeliveryAt` has been set**. Then the wait is on staff, who have not agreed a date. Once a date is set the order is waiting for that date, not stuck, and flagging it would be a false alarm — which teaches people to ignore every alert on this screen.
+
 `sales` is revenue booked (placed, non-cancelled orders), not cash in hand. `codPosition.amount` is money the courier is still holding on delivered-but-unpaid COD orders. `alerts` is severity-ordered (`HIGH` > `MEDIUM` > `LOW`).
 
 **Error responses:** none beyond the global conventions.
@@ -2340,6 +2378,14 @@ Amounts are stored to four decimals. `entityId` is the governorate id, the rate 
 |---|---|---|---|
 | `CUSTOM_REQUEST_STATUS_CHANGED` | `PATCH /admin/custom-requests/{id}/status`, and the move to `QUOTED` when a request is first quoted | `CUSTOM_REQUEST` / `REQ-2026-000001` | status → status, e.g. `NEW` → `CONTACTED`. `reason` is the staff note |
 | `CUSTOM_REQUEST_QUOTED` | `PATCH /admin/custom-requests/{id}/quote`, when the amount changed | `CUSTOM_REQUEST` / `REQ-2026-000001` | amount → amount at four decimals, e.g. `4000.0000` → `5500.0000` (`oldValue` is empty for the first quote). `reason` is the note sent with the quote |
+
+**Order events** — a delivery appointment is a commitment made to the customer, and the order keeps only the latest one, so the audit log is the history of what was promised and when it moved. Same rules: only real changes are recorded (setting the same date again records nothing), and a refused call records nothing.
+
+| `action` | Caused by | `entityType` / `entityLabel` | `oldValue` → `newValue`, `reason` |
+|---|---|---|---|
+| `ORDER_DELIVERY_SCHEDULED` | `PATCH /admin/orders/{id}/schedule`, when the appointment changed | `ORDER` / the order number, e.g. `VLR-260812-9042` | ISO-8601 in Cairo time, e.g. `2026-10-12T10:00:00+03:00` → `2026-10-14T16:00:00+03:00`. `oldValue` is empty for the first appointment. `reason` is the staff note |
+
+`entityId` is the order id, so `GET /api/v1/admin/audit/ORDER/{orderId}` lists every appointment an order ever had. Status moves are not here: they are on the order's own `timeline`.
 
 ### `GET /api/v1/admin/audit`
 **Summary:** Paginated audit entries, newest first; optionally filter by action or actor.

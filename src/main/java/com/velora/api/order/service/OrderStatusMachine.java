@@ -31,7 +31,16 @@ public class OrderStatusMachine {
                 FulfillmentStatus.CONFIRMED,
                 FulfillmentStatus.CANCELLED));
 
+        // AWAITING_SCHEDULE is optional: a delivery date can be agreed here, or staff can go
+        // straight to PROCESSING without one.
         FULFILLMENT.put(FulfillmentStatus.CONFIRMED, EnumSet.of(
+                FulfillmentStatus.AWAITING_SCHEDULE,
+                FulfillmentStatus.PROCESSING,
+                FulfillmentStatus.CANCELLED));
+
+        // Leaving for PROCESSING additionally needs scheduledDeliveryAt (OrderService checks
+        // it, with its own error code, so staff are told what to do rather than "not allowed").
+        FULFILLMENT.put(FulfillmentStatus.AWAITING_SCHEDULE, EnumSet.of(
                 FulfillmentStatus.PROCESSING,
                 FulfillmentStatus.CANCELLED));
 

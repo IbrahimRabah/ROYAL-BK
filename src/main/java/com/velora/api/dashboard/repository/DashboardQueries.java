@@ -96,7 +96,7 @@ public class DashboardQueries {
                 SELECT fulfillment_status, COUNT(*) AS order_count
                 FROM customer_order
                 WHERE fulfillment_status IN
-                      ('PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED',
+                      ('PENDING', 'CONFIRMED', 'AWAITING_SCHEDULE', 'PROCESSING', 'SHIPPED',
                        'OUT_FOR_DELIVERY', 'DELIVERY_FAILED')
                 GROUP BY fulfillment_status
                 """,
@@ -111,6 +111,11 @@ public class DashboardQueries {
      *
      * <p>A count alone hides the problem: ten orders awaiting confirmation is normal,
      * one awaiting confirmation since Tuesday is not.
+     *
+     * <p>An order in AWAITING_SCHEDULE counts only while NO delivery date has been set: then
+     * the wait is on staff, who have not agreed one. Once a date is set the order is waiting
+     * for that date, and an alert about it would be a false alarm — which teaches people to
+     * ignore every alert on this screen.
      */
     public List<DashboardResponse.StaleOrder> staleOrders(int olderThanHours) {
         return jdbc.query("""
@@ -118,7 +123,9 @@ public class DashboardQueries {
                        id, order_number, fulfillment_status, contact_name, grand_total,
                        DATEDIFF(hour, updated_at, SYSDATETIMEOFFSET()) AS hours_waiting
                 FROM customer_order
-                WHERE fulfillment_status IN ('PENDING', 'CONFIRMED', 'PROCESSING')
+                WHERE (fulfillment_status IN ('PENDING', 'CONFIRMED', 'PROCESSING')
+                       OR (fulfillment_status = 'AWAITING_SCHEDULE'
+                           AND scheduled_delivery_at IS NULL))
                   AND DATEDIFF(hour, updated_at, SYSDATETIMEOFFSET()) >= ?
                 ORDER BY updated_at ASC
                 """,
@@ -323,6 +330,7 @@ public class DashboardQueries {
         return switch (status) {
             case "PENDING" -> "بانتظار التأكيد";
             case "CONFIRMED" -> "مؤكد — جاهز للتجهيز";
+            case "AWAITING_SCHEDULE" -> "بانتظار تحديد الموعد";
             case "PROCESSING" -> "قيد التجهيز";
             case "SHIPPED" -> "تم الشحن";
             case "OUT_FOR_DELIVERY" -> "خرج للتوصيل";

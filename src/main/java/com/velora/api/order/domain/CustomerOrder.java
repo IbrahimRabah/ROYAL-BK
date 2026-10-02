@@ -17,6 +17,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -172,6 +173,25 @@ public class CustomerOrder {
 
     @Column(name = "delivery_days_max")
     private Short deliveryDaysMax;
+
+    // ------------------------------------------------------ delivery date
+
+    /** The date the customer asked for at checkout. A request, not a promise. */
+    @Column(name = "preferred_delivery_date")
+    private LocalDate preferredDeliveryDate;
+
+    /** Part of the day the customer asked for. Only ever set together with a date. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_delivery_slot", length = 10)
+    private DeliverySlot preferredDeliverySlot;
+
+    /**
+     * The appointment staff agreed with the customer. Set at
+     * {@code PATCH /admin/orders/{id}/schedule}; null until then. A furniture order's date is
+     * agreed before the goods leave the warehouse, and it is what decides when they ship.
+     */
+    @Column(name = "scheduled_delivery_at")
+    private OffsetDateTime scheduledDeliveryAt;
 
     // -------------------------------------------------------------- meta
 

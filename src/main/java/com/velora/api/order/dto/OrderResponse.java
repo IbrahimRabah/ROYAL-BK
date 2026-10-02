@@ -1,8 +1,10 @@
 package com.velora.api.order.dto;
 
+import com.velora.api.order.domain.DeliverySlot;
 import com.velora.api.shipping.dto.ShippingBreakdownLine;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -54,6 +56,14 @@ public record OrderResponse(
         String shippingZoneName,
         Integer deliveryDaysMin,
         Integer deliveryDaysMax,
+
+        @Schema(description = "The date the customer asked for at checkout. Null if they did not.")
+        LocalDate preferredDeliveryDate,
+        @Schema(description = "MORNING, AFTERNOON or EVENING. Only present with a date.")
+        DeliverySlot preferredDeliverySlot,
+        @Schema(description = "The appointment staff agreed. Null until one is set; this, not the "
+                + "preferred date, is what the customer is told.")
+        OffsetDateTime scheduledDeliveryAt,
 
         String customerNote,
 

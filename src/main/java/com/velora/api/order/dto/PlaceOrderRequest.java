@@ -1,10 +1,12 @@
 package com.velora.api.order.dto;
 
+import com.velora.api.order.domain.DeliverySlot;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
 
 /**
  * Place an order.
@@ -27,8 +29,22 @@ public record PlaceOrderRequest(
         String paymentMethod,
 
         @Schema(example = "اتصل قبل التوصيل")
-        @Size(max = 500) String customerNote
+        @Size(max = 500) String customerNote,
+
+        @Schema(example = "2026-10-20", description = "The day the customer would like delivery. "
+                + "A request, not a promise: staff agree the real appointment with them. Not in "
+                + "the past, and no more than 90 days ahead (Cairo date).")
+        LocalDate preferredDeliveryDate,
+
+        @Schema(description = "MORNING, AFTERNOON or EVENING. Needs preferredDeliveryDate.")
+        DeliverySlot preferredDeliverySlot
 ) {
+
+    /** An order with no delivery preference, which is most of them. */
+    public PlaceOrderRequest(Long addressId, AddressInput address, String paymentMethod,
+                             String customerNote) {
+        this(addressId, address, paymentMethod, customerNote, null, null);
+    }
 
     @Schema(description = "A delivery address supplied at checkout")
     public record AddressInput(

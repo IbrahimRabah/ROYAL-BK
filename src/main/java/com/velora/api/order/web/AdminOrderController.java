@@ -8,6 +8,7 @@ import com.velora.api.order.domain.PaymentStatus;
 import com.velora.api.order.dto.CancelOrderRequest;
 import com.velora.api.order.dto.OrderResponse;
 import com.velora.api.order.dto.OrderStatusUpdateRequest;
+import com.velora.api.order.dto.ScheduleDeliveryRequest;
 import com.velora.api.order.dto.OrderSummaryResponse;
 import com.velora.api.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -109,6 +110,24 @@ public class AdminOrderController {
         return orderService.changePaymentStatus(orderId,
                 EnumParam.parse(PaymentStatus.class, status, "status"), note, principal.id(),
                 LocaleResolver.resolve(request));
+    }
+
+    @Operation(summary = "Set or move the delivery appointment",
+            description = """
+                    The date and time agreed with the customer. Allowed from confirmation until
+                    delivery, including after a failed attempt; refused for an unconfirmed
+                    (PENDING) or finished order. Must be in the future. Does not change the
+                    order's status. An order in AWAITING_SCHEDULE needs this before it can move
+                    to PROCESSING. Recorded in the audit log, old and new.
+                    """)
+    @PatchMapping("/{orderId}/schedule")
+    public OrderResponse schedule(@PathVariable Long orderId,
+                                  @Valid @RequestBody ScheduleDeliveryRequest body,
+                                  @AuthenticationPrincipal UserPrincipal principal,
+                                  HttpServletRequest request) {
+
+        return orderService.scheduleDelivery(orderId, body.scheduledDeliveryAt(), body.note(),
+                principal.id(), LocaleResolver.resolve(request));
     }
 
     @Operation(summary = "Cancel an order", description = "A reason is required.")

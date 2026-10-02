@@ -46,6 +46,13 @@ public enum AuditAction {
      */
     CUSTOM_REQUEST_QUOTED,
 
+    /**
+     * A delivery appointment was set or moved. It is a commitment made to the customer, and
+     * the order only keeps the latest one: oldValue / newValue are the appointments
+     * (ISO-8601, empty for the first) and the reason is the staff note.
+     */
+    ORDER_DELIVERY_SCHEDULED,
+
     /** An invoice was voided. Always needs a reason. */
     INVOICE_CANCELLED,
 

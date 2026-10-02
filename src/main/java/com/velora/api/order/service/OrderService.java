@@ -1,5 +1,7 @@
 package com.velora.api.order.service;
 
+import com.velora.api.audit.domain.AuditAction;
+import com.velora.api.audit.service.AuditService;
 import com.velora.api.common.dto.PageResponse;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
@@ -18,8 +20,11 @@ import com.velora.api.order.dto.OrderResponse;
 import com.velora.api.order.dto.OrderSummaryResponse;
 import com.velora.api.order.repository.OrderRepository;
 import com.velora.api.order.repository.OrderStatusHistoryRepository;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,19 +51,22 @@ public class OrderService {
     private final ReservationService reservationService;
     private final InvoiceService invoiceService;
     private final ShippingBreakdownJson shippingBreakdownJson;
+    private final AuditService auditService;
 
     public OrderService(OrderRepository orderRepository,
                         OrderStatusHistoryRepository historyRepository,
                         OrderStatusMachine statusMachine,
                         ReservationService reservationService,
                         InvoiceService invoiceService,
-                        ShippingBreakdownJson shippingBreakdownJson) {
+                        ShippingBreakdownJson shippingBreakdownJson,
+                        AuditService auditService) {
         this.orderRepository = orderRepository;
         this.historyRepository = historyRepository;
         this.statusMachine = statusMachine;
         this.reservationService = reservationService;
         this.invoiceService = invoiceService;
         this.shippingBreakdownJson = shippingBreakdownJson;
+        this.auditService = auditService;
     }
 
     // ------------------------------------------------------------- customer view
@@ -128,6 +136,17 @@ public class OrderService {
 
         statusMachine.requireTransition(from, to);
 
+        /*
+         * Waiting for a date, then processing without one, makes the waiting meaningless — so
+         * it is refused. Its own error code on purpose: the move IS allowed, a date is missing,
+         * and a generic "not allowed" would send staff looking for a problem with the order.
+         * CONFIRMED to PROCESSING directly never needs a date: scheduling is optional.
+         */
+        if (from == FulfillmentStatus.AWAITING_SCHEDULE && to == FulfillmentStatus.PROCESSING
+                && order.getScheduledDeliveryAt() == null) {
+            throw new BusinessException(ErrorCode.DELIVERY_NOT_SCHEDULED);
+        }
+
         if (requiresNote(to) && (note == null || note.isBlank())) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED,
                     "A reason is required when marking an order as %s".formatted(to));
@@ -186,6 +205,58 @@ public class OrderService {
          * were touched before the clear.
          */
         return toResponse(load(orderId), locale);
+    }
+
+    /**
+     * Sets or moves the delivery appointment agreed with the customer.
+     *
+     * <p>Allowed from confirmation until delivery — including after a failed attempt, when
+     * rescheduling is the whole point — and refused for an order not yet confirmed or already
+     * finished. Setting a date does NOT change the status: an order in AWAITING_SCHEDULE stays
+     * there until staff move it on, which they can now do (it needs this date).
+     *
+     * <p>Audited, old and new: the appointment is a commitment made to the customer, and the
+     * order only keeps the latest one. Saving the same instant again changes and records
+     * nothing.
+     */
+    @Transactional
+    public OrderResponse scheduleDelivery(Long orderId, OffsetDateTime scheduledAt, String note,
+                                          Long actorId, String locale) {
+        CustomerOrder order = load(orderId);
+        FulfillmentStatus status = order.getFulfillmentStatus();
+
+        if (!status.canBeScheduled()) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_SCHEDULABLE,
+                    status == FulfillmentStatus.PENDING
+                            ? "Confirm the order before setting its delivery date"
+                            : "A %s order cannot be given a delivery date".formatted(status));
+        }
+        if (!scheduledAt.toInstant().isAfter(Instant.now())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "The delivery date and time must be in the future");
+        }
+
+        OffsetDateTime previous = order.getScheduledDeliveryAt();
+        boolean changed = previous == null || !previous.toInstant().equals(scheduledAt.toInstant());
+        if (changed) {
+            order.setScheduledDeliveryAt(scheduledAt);
+            order.touch();
+            orderRepository.save(order);
+
+            auditService.record(AuditAction.ORDER_DELIVERY_SCHEDULED, "ORDER", order.getId(),
+                    order.getOrderNumber(),
+                    previous == null ? null : cairoIso(previous), cairoIso(scheduledAt),
+                    note, actorId);
+            log.info("Order {} delivery scheduled for {} (was {})", order.getOrderNumber(),
+                    scheduledAt, previous);
+        }
+        return toResponse(load(orderId), locale);
+    }
+
+    /** Both ends of an audit entry in one form, whatever offset each was stored or sent with. */
+    private static String cairoIso(OffsetDateTime value) {
+        return DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
+                value.atZoneSameInstant(ZoneId.of("Africa/Cairo")));
     }
 
     @Transactional
@@ -369,6 +440,9 @@ public class OrderService {
                 order.getShippingZoneName(),
                 order.getDeliveryDaysMin() == null ? null : (int) order.getDeliveryDaysMin(),
                 order.getDeliveryDaysMax() == null ? null : (int) order.getDeliveryDaysMax(),
+                order.getPreferredDeliveryDate(),
+                order.getPreferredDeliverySlot(),
+                order.getScheduledDeliveryAt(),
                 order.getCustomerNote(),
                 invoiceService.findInvoiceNumberForOrder(order.getId()),
                 items,

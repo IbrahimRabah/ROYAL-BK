@@ -11,6 +11,7 @@
 | `baseline/seed_reference_data.sql` | Data the application needs on *any* database: the two roles, the 27 governorates, the shipping zones, per-size rates and which zone each governorate is in. South Sinai, Aswan and Luxor are in no zone, i.e. **closed**. Safe to re-run. |
 | `baseline/seed_test_fixtures.sql` | **Tests only.** A seller profile, which invoice issuance requires. Never apply it to a real database: a real shop enters its own legal details at `PUT /api/v1/admin/settings/store-profile`. |
 | `V2__...sql` to `V14__...sql` | **History.** Every change made since the schema was first created. Already contained in the baseline. |
+| `V15__order_delivery_schedule.sql` | The first change **after** the baseline: delivery preference and appointment columns on `customer_order`, and the `AWAITING_SCHEDULE` status in its CHECK. Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it on top of the baseline. |
 
 There is no `V1`. The original schema script is gone and was never in this repository; the baseline
 replaces it, and was scripted from a database that already had V2–V14 applied.
