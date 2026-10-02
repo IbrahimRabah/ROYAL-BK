@@ -54,6 +54,8 @@ public enum ErrorCode {
     PRODUCT_NOT_FOUND("Product not found", HttpStatus.NOT_FOUND),
     VARIANT_NOT_FOUND("This option is not available", HttpStatus.NOT_FOUND),
     PRODUCT_NOT_ACTIVE("This product is not currently for sale", HttpStatus.CONFLICT),
+    PRODUCT_NOT_PURCHASABLE("This product cannot be added to the cart",
+            HttpStatus.CONFLICT),
     PRODUCT_HAS_NO_VARIANTS("Add at least one variant before publishing", HttpStatus.CONFLICT),
     PRODUCT_MISSING_ARABIC_NAME("An Arabic name is required before publishing",
             HttpStatus.CONFLICT),

@@ -1,6 +1,6 @@
 # VELORA API Contract
 
-Complete reference for every REST endpoint exposed by the VELORA backend (Spring Boot 4.1 / Java 21). Generated from the controllers, DTOs, service layer and `ErrorCode` catalog as of 2026-08-12.
+Complete reference for every REST endpoint exposed by the VELORA backend (Spring Boot 4.1 / Java 21). Generated from the controllers, DTOs, service layer and `ErrorCode` catalog as of 2026-10-02.
 
 ## Conventions
 
@@ -369,6 +369,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 | `inStockOnly` | boolean | Only products with available stock |
 | `featured` | boolean | Only featured products |
 | `newArrival` | boolean | Only new-arrival products |
+| `fulfillmentType` | enum | `READY_MADE` \| `MADE_TO_ORDER` \| `CUSTOM_WORK` — how the product is sold. Omit for all types. An unknown value returns `400 VALIDATION_FAILED` |
 | `sort` | string | `newest` (default), `price_asc`, `price_desc`, `name` |
 | `page` / `size` | int | Pagination; `size` default 24, capped at 60 |
 
@@ -393,7 +394,9 @@ All endpoints in this section are public (no auth). Response locale is resolved 
       "inStock": true,
       "availableQty": 7,
       "featured": true,
-      "newArrival": false
+      "newArrival": false,
+      "fulfillmentType": "READY_MADE",
+      "shippingSizeClass": "MEDIUM"
     }
   ],
   "page": 0, "size": 24, "totalElements": 137, "totalPages": 6,
@@ -401,7 +404,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 }
 ```
 
-**Error responses:** `400 INVALID_PARAMETER` on a malformed filter param (e.g. non-numeric `categoryId`). `ProductFilterRequest` carries no Bean Validation constraints and isn't `@Valid`-checked, so `VALIDATION_FAILED` cannot occur here.
+**Error responses:** `400 VALIDATION_FAILED` when a filter param cannot be bound — an unknown `fulfillmentType` (e.g. `BANANA`) or a non-numeric `categoryId`. `ProductFilterRequest` is bound as a whole object, so Spring reports a bad field as a binding failure, which the global handler maps to `VALIDATION_FAILED` with an `errors` array naming the field. It is not `INVALID_PARAMETER` and never a `500`.
 
 ---
 
@@ -442,6 +445,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
   "specifications": [{ "code": "movement", "name": "الحركة", "value": "أوتوماتيكي سويسري" }],
   "images": [{ "id": 9000, "url": "https://cdn.velora.com/products/101/main.jpg", "thumbUrl": "https://cdn.velora.com/products/101/main_thumb.jpg", "alt": "Classic Gold Watch", "main": true }],
   "inStock": true, "featured": true, "newArrival": false,
+  "fulfillmentType": "READY_MADE", "shippingSizeClass": "MEDIUM",
   "seo": { "metaTitle": "الساعة الكلاسيكية الذهبية | Velora", "metaDescription": "تسوق الساعة الكلاسيكية الذهبية.", "canonicalPath": "/products/classic-gold-watch" }
 }
 ```
@@ -604,7 +608,9 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
       "id": 501, "slug": "classic-gold-watch", "status": "ACTIVE",
       "nameAr": "ساعة كلاسيك ذهبية", "nameEn": "Classic Gold Watch",
       "categoryId": 12, "categoryName": "ساعات رجالية", "brandId": 3, "brandName": "فيلورا",
-      "featured": false, "newArrival": true, "variantCount": 2, "imageCount": 4,
+      "featured": false, "newArrival": true,
+      "fulfillmentType": "READY_MADE", "shippingSizeClass": "MEDIUM",
+      "variantCount": 2, "imageCount": 4,
       "minPrice": 2200.00, "maxPrice": 2600.00, "availableQty": 56,
       "publishedAt": "2026-07-01T09:00:00Z", "archivedAt": null,
       "createdAt": "2026-06-28T14:22:10Z", "updatedAt": "2026-08-10T11:05:44Z",
@@ -641,10 +647,15 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
   ],
   "featured": false,
   "newArrival": true,
-  "specifications": [ { "attributeId": 9, "attributeValueId": null, "valueText": "Automatic" } ]
+  "specifications": [ { "attributeId": 9, "attributeValueId": null, "valueText": "Automatic" } ],
+  "fulfillmentType": "READY_MADE",
+  "shippingSizeClass": "MEDIUM"
 }
 ```
 `categoryId` required. `translations` required, non-empty, each `locale` one of `ar`|`en`, `name` required (max 255).
+
+`fulfillmentType` — `READY_MADE` \| `MADE_TO_ORDER` \| `CUSTOM_WORK`; how the product is sold, **not** what it is (watch / wallet / perfume is the category). Optional on create, defaults to `READY_MADE`. Only `READY_MADE` products can be added to a cart.
+`shippingSizeClass` — `SMALL` \| `MEDIUM` \| `LARGE`. **Required when `fulfillmentType` is `READY_MADE`** (including when it is omitted and defaulted); optional for the other two types. Missing → `400 VALIDATION_FAILED`.
 
 **Success response `201`:** `ProductAdminResponse`, `status: "DRAFT"`, `variantCount: 0`, `warnings` including `"No variants — this product cannot be published or bought"` and `"No images"`.
 
@@ -662,6 +673,8 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 
 **Request body:** same shape as create (minus `slug` required — only changes if different).
 
+`fulfillmentType` and `shippingSizeClass`: **omit or send `null` to leave the stored value unchanged** (there is no way to clear a value with `null`). After applying them, a `READY_MADE` product must have a `shippingSizeClass` or the request fails with `400 VALIDATION_FAILED`. Products that existed before this field was added are `READY_MADE` with `shippingSizeClass: null`, so the first edit of each must supply a size.
+
 **Success response `200`:** `ProductAdminResponse`.
 
 **Error responses:** `404 PRODUCT_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `404 BRAND_NOT_FOUND`, `400 VALIDATION_FAILED`.
@@ -669,7 +682,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 ---
 
 #### `PATCH /api/v1/admin/products/{id}/publish`
-**Summary:** Move a product to `ACTIVE`. Refused without at least one variant and an Arabic name.
+**Summary:** Move a product to `ACTIVE`. Always requires an Arabic name. A `READY_MADE` product also needs at least one variant; `MADE_TO_ORDER` and `CUSTOM_WORK` products publish without variants.
 
 **Success response `200`:** `ProductAdminResponse`, `status: "ACTIVE"`, `publishedAt` set.
 
@@ -677,7 +690,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 | Status | Code | When |
 |---|---|---|
 | 404 | PRODUCT_NOT_FOUND | No product with this id |
-| 409 | PRODUCT_HAS_NO_VARIANTS | Product has zero variants |
+| 409 | PRODUCT_HAS_NO_VARIANTS | `READY_MADE` product has zero variants (never raised for the other fulfillment types) |
 | 409 | PRODUCT_MISSING_ARABIC_NAME | No `ar` translation on the product |
 
 ---
@@ -701,7 +714,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 ---
 
 #### `POST /api/v1/admin/products/{id}/duplicate`
-**Summary:** Copy a product's content (translations, category, brand) as a new `DRAFT`. SKUs, stock and images are not copied.
+**Summary:** Copy a product's content (translations, category, brand, `fulfillmentType`, `shippingSizeClass`) as a new `DRAFT`. SKUs, stock and images are not copied.
 
 **Success response `201`:** `ProductAdminResponse` for the new product (name suffixed `" (copy)"`, fresh unique slug).
 
@@ -1154,6 +1167,7 @@ Send this back as `X-Guest-Token` on every subsequent cart, shipping-quote and c
 | 400 | VALIDATION_FAILED | No guest token / not signed in, or cart already at 50 distinct lines |
 | 401 | TOKEN_INVALID | Guest token signature is wrong, or unsigned and the transition flag is off |
 | 404 | VARIANT_NOT_FOUND | Variant id does not exist |
+| 409 | PRODUCT_NOT_PURCHASABLE | The variant's product is `MADE_TO_ORDER` or `CUSTOM_WORK` — only `READY_MADE` products go in the cart. Checked before `PRODUCT_NOT_ACTIVE`, so it is returned even for a draft |
 | 409 | PRODUCT_NOT_ACTIVE | Variant or its product is archived / not active |
 | 409 | STOCK_UNAVAILABLE | Requested quantity (plus any already in cart) exceeds available stock |
 
@@ -1489,7 +1503,7 @@ Legal transitions:
 
 **Success response `200`:** `OrderResponse` with updated `paymentStatus`, new timeline entry.
 
-**Error responses:** `404 ORDER_NOT_FOUND`, `409 INVALID_STATUS_TRANSITION`. Note: an invalid `status` query value currently surfaces as a generic `500` rather than a clean `400` — `PaymentStatus.valueOf()` throws unchecked in the controller and isn't caught into a `BusinessException`.
+**Error responses:** `400 INVALID_PARAMETER` for an unknown `status` value (the `detail` lists the valid values), `404 ORDER_NOT_FOUND`, `409 INVALID_STATUS_TRANSITION`.
 
 ---
 
@@ -1996,7 +2010,7 @@ Records staff-initiated changes (price edits, stock adjustments, publish/archive
 }
 ```
 
-**Error responses:** an invalid `action` value currently surfaces as a generic `500 INTERNAL_ERROR` (`AuditAction.valueOf` throws unchecked, not mapped to a business error).
+**Error responses:** `400 INVALID_PARAMETER` for an unknown `action` value; the `detail` lists the valid values.
 
 ---
 

@@ -1,5 +1,7 @@
 package com.velora.api.catalog.dto.admin;
 
+import com.velora.api.catalog.domain.FulfillmentType;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -28,7 +30,13 @@ public record ProductCreateRequest(
 
         @Schema(description = "Informational specifications — movement, water resistance, notes")
         @Valid
-        List<SpecificationRequest> specifications
+        List<SpecificationRequest> specifications,
+
+        @Schema(description = "How the product is sold. Defaults to READY_MADE when omitted.")
+        FulfillmentType fulfillmentType,
+
+        @Schema(description = "Required when fulfillmentType is READY_MADE")
+        ShippingSizeClass shippingSizeClass
 ) {
 
     @Schema(description = "One specification row")

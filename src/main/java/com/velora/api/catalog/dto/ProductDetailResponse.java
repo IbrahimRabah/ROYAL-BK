@@ -1,5 +1,7 @@
 package com.velora.api.catalog.dto;
 
+import com.velora.api.catalog.domain.FulfillmentType;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
@@ -31,6 +33,8 @@ public record ProductDetailResponse(
         boolean inStock,
         boolean featured,
         boolean newArrival,
+        FulfillmentType fulfillmentType,
+        ShippingSizeClass shippingSizeClass,
         SeoResponse seo
 ) {
 

@@ -1,5 +1,7 @@
 package com.velora.api.catalog.dto.admin;
 
+import com.velora.api.catalog.domain.FulfillmentType;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -26,6 +28,8 @@ public record ProductAdminResponse(
         String brandName,
         boolean featured,
         boolean newArrival,
+        FulfillmentType fulfillmentType,
+        ShippingSizeClass shippingSizeClass,
         @Schema(description = "Informational specifications — movement, water resistance, "
                 + "strap material. Load this into the edit form and send it back whole; a "
                 + "response missing this field would round-trip as the specifications being "

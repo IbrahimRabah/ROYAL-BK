@@ -1,5 +1,6 @@
 package com.velora.api.catalog.spec;
 
+import com.velora.api.catalog.domain.FulfillmentType;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductAttributeValue;
 import com.velora.api.catalog.domain.ProductStatus;
@@ -85,6 +86,13 @@ public final class ProductSpecifications {
             return alwaysTrue();
         }
         return (root, query, cb) -> cb.isTrue(root.get("newArrival"));
+    }
+
+    public static Specification<Product> hasFulfillmentType(FulfillmentType fulfillmentType) {
+        if (fulfillmentType == null) {
+            return alwaysTrue();
+        }
+        return (root, query, cb) -> cb.equal(root.get("fulfillmentType"), fulfillmentType);
     }
 
     /**

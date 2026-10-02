@@ -3,6 +3,7 @@ package com.velora.api.catalog.service.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.catalog.dto.admin.ProductAdminResponse;
 import com.velora.api.catalog.dto.admin.ProductCreateRequest;
 import com.velora.api.catalog.dto.admin.ProductUpdateRequest;
@@ -66,7 +67,7 @@ class ProductAdminResponseTranslationIntegrationTest {
                 List.of(new TranslationRequest("ar", "ساعة كلاسيك ذهبية",
                         "وصف قصير للساعة", "وصف تفصيلي طويل للساعة الذهبية الكلاسيكية",
                         "ساعة كلاسيك ذهبية - فيلورا", "أفضل ساعة كلاسيك ذهبية في مصر")),
-                false, false, null));
+                false, false, null, null, ShippingSizeClass.MEDIUM));
         productId = created.id();
 
         ProductAdminResponse fetched = productAdminService.get(productId);
@@ -89,7 +90,7 @@ class ProductAdminResponseTranslationIntegrationTest {
                 List.of(new TranslationRequest("ar", "ساعة كلاسيك ذهبية",
                         "وصف قصير للساعة", "وصف تفصيلي طويل للساعة الذهبية الكلاسيكية",
                         "ساعة كلاسيك ذهبية - فيلورا", "أفضل ساعة كلاسيك ذهبية في مصر")),
-                false, false, null));
+                false, false, null, null, ShippingSizeClass.MEDIUM));
         productId = created.id();
 
         // Simulate the admin form: load the product, change only the name, send the
@@ -104,7 +105,8 @@ class ProductAdminResponseTranslationIntegrationTest {
                 arBeforeEdit.metaDescription());
 
         productAdminService.update(productId, new ProductUpdateRequest(
-                categoryId, null, null, List.of(editedTranslation), false, false, null));
+                categoryId, null, null, List.of(editedTranslation), false, false, null,
+                null, null));
 
         TranslationResponse afterEdit = productAdminService.get(productId).translations().get(0);
         assertThat(afterEdit.name()).isEqualTo("ساعة كلاسيك ذهبية - محدثة");

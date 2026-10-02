@@ -2,6 +2,7 @@ package com.velora.api.inventory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.dto.admin.ProductAdminResponse;
 import com.velora.api.catalog.dto.admin.ProductCreateRequest;
@@ -142,7 +143,7 @@ class StockMovementReasonAndActorIntegrationTest {
                 categoryId, null, "movement-test-" + unique,
                 List.of(new TranslationRequest("ar", "منتج اختبار السجل " + unique,
                         null, null, null, null)),
-                false, false, null));
+                false, false, null, null, ShippingSizeClass.MEDIUM));
         productId = product.id();
 
         List<VariantAdminResponse> variants = variantAdminService.saveVariants(productId,

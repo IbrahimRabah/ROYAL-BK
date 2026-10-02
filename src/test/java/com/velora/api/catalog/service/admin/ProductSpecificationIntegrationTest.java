@@ -3,6 +3,7 @@ package com.velora.api.catalog.service.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.catalog.domain.Attribute;
 import com.velora.api.catalog.domain.AttributeDataType;
 import com.velora.api.catalog.domain.AttributeValue;
@@ -192,7 +193,7 @@ class ProductSpecificationIntegrationTest {
                 .toList();
 
         productAdminService.update(productId, new ProductUpdateRequest(
-                categoryId, null, null, null, false, false, resubmitted));
+                categoryId, null, null, null, false, false, resubmitted, null, null));
 
         List<SpecificationAdminResponse> afterUpdate =
                 productAdminService.get(productId).specifications();
@@ -225,7 +226,7 @@ class ProductSpecificationIntegrationTest {
                 categoryId, null, productSlug,
                 List.of(new TranslationRequest("ar", "منتج اختبار المواصفات " + unique,
                         null, null, null, null)),
-                false, false, specs));
+                false, false, specs, null, ShippingSizeClass.MEDIUM));
         productId = created.id();
         return created;
     }

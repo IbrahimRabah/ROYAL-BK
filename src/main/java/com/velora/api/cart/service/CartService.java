@@ -306,6 +306,9 @@ public class CartService {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VARIANT_NOT_FOUND));
 
+        if (!variant.getProduct().isReadyMade()) {
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_PURCHASABLE);
+        }
         if (!isSellable(variant)) {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_ACTIVE);
         }
@@ -317,7 +320,8 @@ public class CartService {
         return variant.getStatus() == VariantStatus.ACTIVE
                 && variant.getArchivedAt() == null
                 && product.getStatus() == ProductStatus.ACTIVE
-                && product.getArchivedAt() == null;
+                && product.getArchivedAt() == null
+                && product.isReadyMade();
     }
 
     /** Everything that changed since the items were added. */

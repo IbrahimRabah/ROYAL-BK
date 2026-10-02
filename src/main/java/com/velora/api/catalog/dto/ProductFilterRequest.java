@@ -1,5 +1,6 @@
 package com.velora.api.catalog.dto;
 
+import com.velora.api.catalog.domain.FulfillmentType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,6 +36,9 @@ public record ProductFilterRequest(
         Boolean featured,
 
         Boolean newArrival,
+
+        @Schema(example = "READY_MADE", description = "How the product is sold")
+        FulfillmentType fulfillmentType,
 
         @Schema(example = "newest",
                 allowableValues = {"newest", "price_asc", "price_desc", "name"})

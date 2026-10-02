@@ -63,6 +63,7 @@ public class ProductQueryService {
                 .and(ProductSpecifications.inStock(filter.inStockOnly()))
                 .and(ProductSpecifications.isFeatured(filter.featured()))
                 .and(ProductSpecifications.isNewArrival(filter.newArrival()))
+                .and(ProductSpecifications.hasFulfillmentType(filter.fulfillmentType()))
                 .and(ProductSpecifications.matches(filter.q(), locale));
 
         Pageable effective = applySort(pageable, filter.sortOrDefault());
@@ -101,13 +102,13 @@ public class ProductQueryService {
 
     public PageResponse<ProductSummaryResponse> findFeatured(Pageable pageable, String locale) {
         ProductFilterRequest filter = new ProductFilterRequest(
-                null, null, null, null, null, null, true, true, null, "newest");
+                null, null, null, null, null, null, true, true, null, null, "newest");
         return search(filter, pageable, locale);
     }
 
     public PageResponse<ProductSummaryResponse> findNewArrivals(Pageable pageable, String locale) {
         ProductFilterRequest filter = new ProductFilterRequest(
-                null, null, null, null, null, null, true, null, true, "newest");
+                null, null, null, null, null, null, true, null, true, null, "newest");
         return search(filter, pageable, locale);
     }
 

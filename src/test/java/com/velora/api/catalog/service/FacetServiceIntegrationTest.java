@@ -208,7 +208,7 @@ class FacetServiceIntegrationTest {
         //    this is the exact "customer filters and finds an empty page" bug.
         var results = productQueryService.search(
                 new ProductFilterRequest(null, categoryId, null, null, null,
-                        List.of(specValueId), null, null, null, "newest"),
+                        List.of(specValueId), null, null, null, null, "newest"),
                 PageRequest.of(0, 20), "ar");
 
         assertThat(results.content())

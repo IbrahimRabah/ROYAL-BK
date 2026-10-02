@@ -1,5 +1,7 @@
 package com.velora.api.catalog.dto.admin;
 
+import com.velora.api.catalog.domain.FulfillmentType;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -24,6 +26,13 @@ public record ProductUpdateRequest(
 
         boolean newArrival,
 
-        @Valid List<ProductCreateRequest.SpecificationRequest> specifications
+        @Valid List<ProductCreateRequest.SpecificationRequest> specifications,
+
+        @Schema(description = "Omit to leave unchanged")
+        FulfillmentType fulfillmentType,
+
+        @Schema(description = "Omit to leave unchanged. Must end up set when the product is "
+                + "READY_MADE")
+        ShippingSizeClass shippingSizeClass
 ) {
 }

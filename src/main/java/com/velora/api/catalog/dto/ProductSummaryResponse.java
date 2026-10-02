@@ -1,5 +1,7 @@
 package com.velora.api.catalog.dto;
 
+import com.velora.api.catalog.domain.FulfillmentType;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 
@@ -27,6 +29,8 @@ public record ProductSummaryResponse(
         @Schema(description = "Shown as 'only 2 left' when low")
         Integer availableQty,
         boolean featured,
-        boolean newArrival
+        boolean newArrival,
+        FulfillmentType fulfillmentType,
+        ShippingSizeClass shippingSizeClass
 ) {
 }

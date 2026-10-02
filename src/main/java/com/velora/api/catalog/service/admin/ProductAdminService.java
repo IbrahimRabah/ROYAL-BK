@@ -80,6 +80,11 @@ public class ProductAdminService {
         product.setFeatured(request.featured());
         product.setNewArrival(request.newArrival());
         product.setStatus(ProductStatus.DRAFT);
+        if (request.fulfillmentType() != null) {
+            product.setFulfillmentType(request.fulfillmentType());
+        }
+        product.setShippingSizeClass(request.shippingSizeClass());
+        requireShippingSizeForReadyMade(product);
 
         String slug = resolveSlug(request.slug(), request.translations(), null);
         product.setSlug(slug);
@@ -102,6 +107,15 @@ public class ProductAdminService {
         product.setBrand(loadBrand(request.brandId()));
         product.setFeatured(request.featured());
         product.setNewArrival(request.newArrival());
+        // Omitted means unchanged, so existing admin clients that do not send these
+        // fields keep working.
+        if (request.fulfillmentType() != null) {
+            product.setFulfillmentType(request.fulfillmentType());
+        }
+        if (request.shippingSizeClass() != null) {
+            product.setShippingSizeClass(request.shippingSizeClass());
+        }
+        requireShippingSizeForReadyMade(product);
 
         String requestedSlug = request.slug();
         if (requestedSlug != null && !requestedSlug.equals(product.getSlug())) {
@@ -125,14 +139,15 @@ public class ProductAdminService {
     // ------------------------------------------------------------- status changes
 
     /**
-     * A product cannot go live without at least one variant — it would render as a
-     * page with nothing to buy.
+     * A READY_MADE product cannot go live without at least one variant — it would
+     * render as a page with nothing to buy. MADE_TO_ORDER and CUSTOM_WORK products are
+     * not bought through the cart, so they publish without variants.
      */
     @Transactional
     public ProductAdminResponse publish(Long id) {
         Product product = load(id);
 
-        if (product.getVariants().isEmpty()) {
+        if (product.isReadyMade() && product.getVariants().isEmpty()) {
             throw new BusinessException(ErrorCode.PRODUCT_HAS_NO_VARIANTS);
         }
         if (product.getTranslations().get("ar") == null) {
@@ -177,6 +192,8 @@ public class ProductAdminService {
         copy.setBrand(source.getBrand());
         copy.setFeatured(false);
         copy.setNewArrival(false);
+        copy.setFulfillmentType(source.getFulfillmentType());
+        copy.setShippingSizeClass(source.getShippingSizeClass());
         copy.setStatus(ProductStatus.DRAFT);
         copy.setSlug(SlugGenerator.generateUnique(
                 source.getSlug() + "-copy", s -> !productRepository.existsBySlug(s)));
@@ -369,6 +386,13 @@ public class ProductAdminService {
         return slug;
     }
 
+    private void requireShippingSizeForReadyMade(Product product) {
+        if (product.isReadyMade() && product.getShippingSizeClass() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "shippingSizeClass is required for READY_MADE products");
+        }
+    }
+
     private Product load(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
@@ -391,7 +415,7 @@ public class ProductAdminService {
 
     private ProductAdminResponse toResponse(Product product) {
         List<String> warnings = new ArrayList<>();
-        if (product.getVariants().isEmpty()) {
+        if (product.isReadyMade() && product.getVariants().isEmpty()) {
             warnings.add("No variants — this product cannot be published or bought");
         }
         if (product.getImages().isEmpty()) {
@@ -439,6 +463,8 @@ public class ProductAdminService {
                 product.getBrand() == null ? null : product.getBrand().getNameAr(),
                 product.isFeatured(),
                 product.isNewArrival(),
+                product.getFulfillmentType(),
+                product.getShippingSizeClass(),
                 specifications,
                 product.getVariants().size(),
                 product.getImages().size(),

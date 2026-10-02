@@ -62,6 +62,23 @@ public class Product extends BaseAuditEntity {
     @Column(name = "status", nullable = false, length = 20)
     private ProductStatus status = ProductStatus.DRAFT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_type", nullable = false, length = 20)
+    private FulfillmentType fulfillmentType = FulfillmentType.READY_MADE;
+
+    /**
+     * Required when {@link #fulfillmentType} is READY_MADE, null otherwise.
+     *
+     * <p>That rule is enforced in {@code ProductAdminService} ONLY — there is no CHECK
+     * constraint behind it. Anything that writes the table directly (a SQL script,
+     * a migration, a test inserting a {@code Product}) can store a READY_MADE row
+     * with no size, and the database will accept it. Products that predate this
+     * column are exactly that: READY_MADE with a null size, until staff set one.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shipping_size_class", length = 10)
+    private ShippingSizeClass shippingSizeClass;
+
     @Column(name = "is_featured", nullable = false)
     private boolean featured;
 
@@ -119,6 +136,10 @@ public class Product extends BaseAuditEntity {
 
     public boolean isPurchasable() {
         return status == ProductStatus.ACTIVE && archivedAt == null && isInStock();
+    }
+
+    public boolean isReadyMade() {
+        return fulfillmentType == FulfillmentType.READY_MADE;
     }
 
     public boolean isInStock() {
