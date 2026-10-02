@@ -20,6 +20,7 @@ import com.velora.api.customrequest.dto.CustomRequestCreatedResponse;
 import com.velora.api.customrequest.dto.CustomRequestFilter;
 import com.velora.api.customrequest.dto.CustomRequestResponse;
 import com.velora.api.customrequest.dto.CustomRequestSummaryResponse;
+import com.velora.api.shipping.service.ShippingAdminService;
 import com.velora.api.testsupport.TestImages;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -50,6 +51,7 @@ class CustomRequestAdminIntegrationTest extends CustomRequestTestBase {
     private static final String BASE = "/api/v1/admin/custom-requests";
 
     @Autowired private AuditLogRepository auditLogRepository;
+    @Autowired private ShippingAdminService shippingAdminService;
 
     // --------------------------------------------------------------- status moves
 
@@ -357,6 +359,44 @@ class CustomRequestAdminIntegrationTest extends CustomRequestTestBase {
                 .as("created today, so not in a window that ended yesterday").isZero();
         assertThat(adminService.list(new CustomRequestFilter(null, null, null, marker,
                 today.plusDays(1), null), PageRequest.of(0, 10)).totalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("A request from a closed governorate is accepted, and its detail says we cannot deliver there")
+    void detailWarnsWhenTheGovernorateIsClosed() throws Exception {
+        Long aswan = governorateId("ASW");            // closed since V13
+        CustomRequestCreatedResponse fromAswan = createAsGuest(inGovernorate(customWork(), aswan));
+        CustomRequestCreatedResponse fromCairo = createAsGuest(customWork());
+
+        assertThat(adminService.get(fromAswan.id()).governorateServed()).isFalse();
+        assertThat(adminService.get(fromCairo.id()).governorateServed()).isTrue();
+        assertThat(adminService.quote(fromAswan.id(), new BigDecimal("900"), null, staffId)
+                .governorateServed()).as("every response of a request carries it, not just GET").isFalse();
+
+        mvc.perform(get(BASE + "/{id}", fromAswan.id()).with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.governorateServed").value(false))
+                .andExpect(jsonPath("$.governorateName").isNotEmpty());
+        mvc.perform(get(BASE + "/{id}", fromCairo.id()).with(admin()))
+                .andExpect(jsonPath("$.governorateServed").value(true));
+    }
+
+    @Test
+    @DisplayName("The flag is live, not a snapshot: reopening the governorate turns it true, closing turns it false")
+    void servedFlagFollowsTheGovernorateNow() {
+        Long aswan = governorateId("ASW");
+        CustomRequestCreatedResponse request = createAsGuest(inGovernorate(customWork(), aswan));
+        Long upperEgypt = shippingAdminService.listZones().stream()
+                .filter(z -> z.code().equals("UPPER_EGYPT")).findFirst().orElseThrow().zoneId();
+
+        assertThat(adminService.get(request.id()).governorateServed()).isFalse();
+        try {
+            shippingAdminService.assignGovernorate(aswan, upperEgypt, staffId);
+            assertThat(adminService.get(request.id()).governorateServed()).isTrue();
+        } finally {
+            shippingAdminService.closeGovernorate(aswan, staffId);
+        }
+        assertThat(adminService.get(request.id()).governorateServed()).isFalse();
     }
 
     // ----------------------------------------------------------------- HTTP layer

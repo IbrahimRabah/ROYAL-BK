@@ -20,6 +20,8 @@ public record CustomRequestResponse(
         String email,
         Long governorateId,
         String governorateName,
+        @Schema(description = "Whether we deliver to this governorate RIGHT NOW. Worked out on every read, not stored: a request from a governorate that has since been closed is accepted, but staff must know before quoting work they cannot deliver. A governorate that reopens turns this true again.")
+        boolean governorateServed,
         String area,
         String streetAddress,
         BigDecimal widthCm,

@@ -16,18 +16,28 @@ public interface CustomOrderRequestSequenceRepository
      * Makes sure the year's counter row exists, safely under concurrency.
      *
      * <p>Without this, two requests arriving first thing in a new year both find no row,
-     * both create one, and one of them fails on the primary key. {@code UPDLOCK, HOLDLOCK}
-     * makes the existence check and the insert one atomic step. A new row is seeded from
+     * both create one, and one of them fails on the primary key. The insert is attempted only when the row is absent, and if another
+     * transaction wins the race the primary key refuses the duplicate and that error is
+     * swallowed: the unique constraint is the guarantee, not a lock hint. (An
+     * {@code UPDLOCK, HOLDLOCK} existence check was tried first and still failed under
+     * concurrent load.) A new row is seeded from
      * the highest number already used that year, so a row removed by hand cannot cause a
      * duplicate.
      */
     @Modifying(flushAutomatically = true)
     @Query(value = """
-            IF NOT EXISTS (SELECT 1 FROM custom_order_request_sequence WITH (UPDLOCK, HOLDLOCK)
-                           WHERE fiscal_year = :year)
+            BEGIN TRY
                 INSERT INTO custom_order_request_sequence (fiscal_year, last_number)
-                VALUES (:year, (SELECT COALESCE(MAX(sequence_number), 0)
-                                FROM custom_order_request WHERE fiscal_year = :year))
+                SELECT :year, (SELECT COALESCE(MAX(sequence_number), 0)
+                               FROM custom_order_request WHERE fiscal_year = :year)
+                WHERE NOT EXISTS (SELECT 1 FROM custom_order_request_sequence WHERE fiscal_year = :year);
+            END TRY
+            BEGIN CATCH
+                -- Lost the race to another transaction that inserted the same year. The
+                -- primary key refused the duplicate, which is all we needed to know: the
+                -- row exists now, and the caller locks it next.
+                IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+            END CATCH
             """, nativeQuery = true)
     void ensureYear(@Param("year") int year);
 

@@ -17,6 +17,7 @@ import com.velora.api.customrequest.dto.CustomRequestResponse;
 import com.velora.api.customrequest.dto.CustomRequestSummaryResponse;
 import com.velora.api.customrequest.repository.CustomOrderRequestRepository;
 import com.velora.api.customrequest.repository.CustomRequestSpecifications;
+import com.velora.api.shipping.service.ShippingService;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -49,13 +50,16 @@ public class CustomRequestAdminService {
     private final CustomOrderRequestRepository requestRepository;
     private final StorageService storageService;
     private final AuditService auditService;
+    private final ShippingService shippingService;
 
     public CustomRequestAdminService(CustomOrderRequestRepository requestRepository,
                                      StorageService storageService,
-                                     AuditService auditService) {
+                                     AuditService auditService,
+                                     ShippingService shippingService) {
         this.requestRepository = requestRepository;
         this.storageService = storageService;
         this.auditService = auditService;
+        this.shippingService = shippingService;
     }
 
     // -------------------------------------------------------------------- read
@@ -234,6 +238,7 @@ public class CustomRequestAdminService {
                 r.getEmail(),
                 r.getGovernorate().getId(),
                 r.getGovernorate().getNameAr(),
+                shippingService.isServed(r.getGovernorate().getId()),
                 r.getArea(),
                 r.getStreetAddress(),
                 r.getWidthCm(),

@@ -2150,7 +2150,7 @@ Required: `type`, `contactName` (max 150), `phone`, `governorateId`. `phone`/`al
 | 400 | VALIDATION_FAILED | A required field is missing or too long, a number is out of range, the email is malformed; or for `SIZE_VARIANT`: no `productId`, no dimension at all, or a product that is not ready-made |
 | 400 | INVALID_PHONE_FORMAT | `phone` or `altPhone` is not a valid Egyptian mobile number |
 | 404 | PRODUCT_NOT_FOUND | `productId` is unknown, a draft or archived — a public caller cannot tell these apart |
-| 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't exist. A **closed** governorate is accepted: a request is not a delivery |
+| 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't exist. A **closed** governorate is accepted: a request is not a delivery. Staff see `governorateServed: false` on it |
 | 429 | RATE_LIMITED | More than 10 requests in an hour from this IP |
 
 ---
@@ -2228,7 +2228,7 @@ An unknown `status` or `type` is `400 VALIDATION_FAILED`.
   "product": { "id": 501, "slug": "classic-wallpaper", "name": "ورق حائط كلاسيك", "fulfillmentType": "READY_MADE" },
   "customerId": null,
   "contactName": "محمد أحمد", "phone": "01012345678", "altPhone": null, "email": "customer@example.com",
-  "governorateId": 1, "governorateName": "القاهرة", "area": "مدينة نصر", "streetAddress": "12 شارع التسعين",
+  "governorateId": 1, "governorateName": "القاهرة", "governorateServed": true, "area": "مدينة نصر", "streetAddress": "12 شارع التسعين",
   "widthCm": 120.00, "heightCm": 80.00, "depthCm": null, "quantity": 2,
   "notes": "أريده أعرض قليلاً",
   "attachments": [ { "id": 301, "url": "http://localhost:8081/uploads/custom-requests/2026/10/9f2c….png", "contentType": "image/png", "sizeBytes": 183422, "createdAt": "2026-10-02T12:01:00Z" } ],
@@ -2236,7 +2236,7 @@ An unknown `status` or `type` is `400 VALIDATION_FAILED`.
   "createdAt": "2026-10-02T12:00:00Z", "updatedAt": "2026-10-02T15:10:00Z"
 }
 ```
-`product` is `null` when the request is not about a product; `customerId` is `null` for a guest. `adminNote` is only the **latest** note and `quotedAmount` only the **latest** quote — earlier ones are in the audit log.
+`product` is `null` when the request is not about a product; `customerId` is `null` for a guest. **`governorateServed` is `false` when we do not deliver to that governorate right now** — a request from a closed governorate is accepted (a request is not a delivery), but it is the signal for staff to check that the work can be delivered *before* quoting it. It is worked out on every read, not stored, so it turns `true` again if the governorate reopens, and it is on every response that returns a request (`GET`, `PATCH status`, `PATCH quote`). The list rows do not carry it. `adminNote` is only the **latest** note and `quotedAmount` only the **latest** quote — earlier ones are in the audit log.
 
 **Error responses:** `404 CUSTOM_REQUEST_NOT_FOUND`.
 

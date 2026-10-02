@@ -159,15 +159,16 @@ public class InvoiceService {
      * <p>Concurrent issuers block here rather than reading the same value. The lock
      * is released when the transaction ends, so it is held for milliseconds.
      */
-    private int allocateNumber(int year) {
+    int allocateNumber(int year) {
+        // First invoice of a new year: the counter row is created here, seeded from the
+        // highest existing number so a manually inserted row cannot cause a duplicate.
+        // Done as one atomic statement, not "look for it, else insert": two invoices
+        // issued at the same instant would otherwise both insert, and one would fail.
+        sequenceRepository.ensureYear(year);
+
         InvoiceSequence sequence = sequenceRepository.lockForYear(year)
-                .orElseGet(() -> {
-                    // First invoice of a new year. Seeded from the highest existing
-                    // number so a manually inserted row cannot cause a duplicate.
-                    InvoiceSequence created = new InvoiceSequence(year);
-                    created.setLastNumber(invoiceRepository.highestSequenceFor(year));
-                    return sequenceRepository.save(created);
-                });
+                .orElseThrow(() -> new IllegalStateException(
+                        "Invoice sequence row for " + year + " disappeared after being ensured"));
 
         int next = sequence.next();
         sequenceRepository.save(sequence);

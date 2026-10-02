@@ -143,6 +143,14 @@ public class ShippingService {
     }
 
     /**
+     * Whether we deliver to a governorate right now: it is in an active zone that has rates.
+     * The same test the quote, checkout and address form apply.
+     */
+    public boolean isServed(Long governorateId) {
+        return !rateRepository.findAllForGovernorate(governorateId).isEmpty();
+    }
+
+    /**
      * The rate for an order being created. Throws rather than returning empty,
      * because an order cannot be priced without it.
      */
