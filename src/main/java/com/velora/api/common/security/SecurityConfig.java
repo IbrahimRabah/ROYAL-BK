@@ -88,6 +88,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/cart/**").permitAll()
                         .requestMatchers("/api/v1/shipping/quote").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders").permitAll()
+                        // Custom requests: a guest may ask without an account. The upload
+                        // is guarded by a signed per-request token, not by login.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/custom-requests",
+                                "/api/v1/custom-requests/*/attachments").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter,

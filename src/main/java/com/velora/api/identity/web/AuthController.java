@@ -1,5 +1,6 @@
 package com.velora.api.identity.web;
 
+import com.velora.api.common.ratelimit.ClientIpResolver;
 import com.velora.api.identity.dto.AuthResponse;
 import com.velora.api.identity.dto.ForgotPasswordRequest;
 import com.velora.api.identity.dto.LoginRequest;
@@ -35,10 +36,13 @@ public class AuthController {
 
     private final AuthService authService;
     private final OtpService otpService;
+    private final ClientIpResolver clientIpResolver;
 
-    public AuthController(AuthService authService, OtpService otpService) {
+    public AuthController(AuthService authService, OtpService otpService,
+                          ClientIpResolver clientIpResolver) {
         this.authService = authService;
         this.otpService = otpService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Operation(summary = "Register a new customer",
@@ -65,7 +69,7 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request,
                               HttpServletRequest httpRequest) {
-        return authService.login(request, httpRequest.getRemoteAddr());
+        return authService.login(request, clientIpResolver.resolve(httpRequest));
     }
 
     @Operation(summary = "Exchange a refresh token for a new access token",
@@ -107,7 +111,8 @@ public class AuthController {
     public MessageResponse sendOtp(@Valid @RequestBody OtpSendRequest request,
                                    HttpServletRequest httpRequest) {
         // The code is returned to the notification module, never to the caller.
-        otpService.send(request.destination(), request.purpose(), httpRequest.getRemoteAddr());
+        otpService.send(request.destination(), request.purpose(),
+                clientIpResolver.resolve(httpRequest));
         return MessageResponse.of("A verification code has been sent");
     }
 

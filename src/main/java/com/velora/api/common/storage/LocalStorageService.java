@@ -46,9 +46,12 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public StoredFile store(MultipartFile file, String folder) {
-        validate(file);
+        // What the bytes are, not what the sender says they are: the declared type and
+        // the filename are both under the sender's control, and these files are served
+        // from the application's own origin.
+        String detectedType = validate(file);
 
-        String extension = extensionOf(file.getOriginalFilename(), file.getContentType());
+        String extension = extensionFor(detectedType);
         LocalDate today = LocalDate.now();
 
         // Date folders keep any single directory from growing to tens of thousands
@@ -69,7 +72,7 @@ public class LocalStorageService implements StorageService {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Could not save the file");
         }
 
-        return new StoredFile(key, urlFor(key), file.getSize(), file.getContentType());
+        return new StoredFile(key, urlFor(key), file.getSize(), detectedType);
     }
 
     @Override
@@ -126,7 +129,10 @@ public class LocalStorageService implements StorageService {
 
     // ------------------------------------------------------------------ internal
 
-    private void validate(MultipartFile file) {
+    /**
+     * @return the real content type, taken from the file's first bytes
+     */
+    private String validate(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "The file is empty");
         }
@@ -143,6 +149,24 @@ public class LocalStorageService implements StorageService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED,
                     "Only JPEG, PNG, WebP and AVIF images are accepted");
         }
+
+        // The declared type passed, but it is only a claim. Check the bytes.
+        byte[] head;
+        try (InputStream in = file.getInputStream()) {
+            head = in.readNBytes(ImageSniffer.HEAD_BYTES);
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "The file could not be read");
+        }
+        String detected = ImageSniffer.detect(head).orElseThrow(() ->
+                new BusinessException(ErrorCode.VALIDATION_FAILED,
+                        "The file is not a valid JPEG, PNG, WebP or AVIF image"));
+        boolean detectedAllowed = Arrays.stream(properties.getAllowedContentTypes())
+                .anyMatch(t -> t.equalsIgnoreCase(detected));
+        if (!detectedAllowed) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "Only JPEG, PNG, WebP and AVIF images are accepted");
+        }
+        return detected;
     }
 
     /**
@@ -173,14 +197,13 @@ public class LocalStorageService implements StorageService {
         return filename.replaceAll("[^A-Za-z0-9._-]", "-");
     }
 
-    private String extensionOf(String filename, String contentType) {
-        if (filename != null && filename.contains(".")) {
-            String ext = filename.substring(filename.lastIndexOf('.')).toLowerCase(Locale.ENGLISH);
-            if (ext.matches("\\.[a-z0-9]{2,5}")) {
-                return ext;
-            }
-        }
-        return switch (contentType == null ? "" : contentType) {
+    /**
+     * The extension comes from the detected type, never from the uploaded filename: a
+     * name like {@code evil.html} would otherwise be stored as-is and served from the
+     * application's own origin.
+     */
+    private String extensionFor(String detectedContentType) {
+        return switch (detectedContentType) {
             case "image/png" -> ".png";
             case "image/webp" -> ".webp";
             case "image/avif" -> ".avif";

@@ -131,6 +131,14 @@ public enum ErrorCode {
     REFUND_EXCEEDS_ORDER_TOTAL("Refund is greater than the order total",
             HttpStatus.BAD_REQUEST),
 
+    // ---- custom requests ----
+    CUSTOM_REQUEST_NOT_FOUND("Custom request not found", HttpStatus.NOT_FOUND),
+    /** Images can only be added while a request is still NEW. */
+    CUSTOM_REQUEST_CLOSED("This request is no longer accepting images", HttpStatus.CONFLICT),
+    /** ACCEPTED is only reachable from QUOTED, and a quote is what makes it QUOTED. */
+    CUSTOM_REQUEST_QUOTE_REQUIRED("A request cannot be accepted before it has been quoted",
+            HttpStatus.CONFLICT),
+
     // ---- review ----
     PURCHASE_REQUIRED("Only verified buyers can review this product",
             HttpStatus.UNPROCESSABLE_ENTITY),

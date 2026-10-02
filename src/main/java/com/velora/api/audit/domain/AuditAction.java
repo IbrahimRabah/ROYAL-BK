@@ -34,6 +34,18 @@ public enum AuditAction {
      */
     GOVERNORATE_SERVICE_CHANGED,
 
+    /**
+     * A custom request moved to another status. oldValue / newValue are the statuses and
+     * the reason is the staff note. Who contacted, accepted or rejected a customer.
+     */
+    CUSTOM_REQUEST_STATUS_CHANGED,
+
+    /**
+     * A custom request was quoted or re-quoted — who told the customer what price.
+     * oldValue / newValue are the amounts; the request row only keeps the latest.
+     */
+    CUSTOM_REQUEST_QUOTED,
+
     /** An invoice was voided. Always needs a reason. */
     INVOICE_CANCELLED,
 

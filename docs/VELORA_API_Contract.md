@@ -53,6 +53,8 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 }
 ```
 
+**Rate limits and the client IP:** a few public endpoints are limited per client IP — login, OTP sending, `POST /custom-requests` (10/hour) and `POST /custom-requests/{id}/attachments` (30/hour). Beyond the limit they return `429 RATE_LIMITED`. The client IP is the TCP peer, **except** when that peer is a reverse proxy we run (loopback or a private/link-local address — nginx, or the ngrok agent on a developer machine): then it is taken from `X-Forwarded-For`, read from the right, so each visitor has their own limit instead of the whole site sharing one. A caller on a public address cannot choose its own IP by sending that header. The counters live in memory, per server instance, and reset on restart.
+
 **Money & tax:** every amount is `DECIMAL(19,4)` server-side, serialized as a decimal (shown here as strings for precision, though numeric JSON is also valid — check the actual DTO). Prices are **tax-inclusive**; `taxTotal`/`netTotal` on an order are computed per line then summed, never on the total.
 
 ---
@@ -68,12 +70,13 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 7. [Inventory — Admin](#inventory--admin) — `/api/v1/admin/inventory`
 8. [Invoices](#invoices) — `/api/v1/admin/invoices`, `/api/v1/me/invoices`
 9. [Shipping & Geography](#shipping--geography) — `/api/v1/shipping`, `/api/v1/geo`, `/api/v1/admin/shipping`
-10. [Dashboard](#dashboard) — `/api/v1/admin/dashboard`
-11. [Audit Log](#audit-log) — `/api/v1/admin/audit`
-12. [Export](#export) — `/api/v1/admin/exports`
-13. [Store Profile](#store-profile) — `/api/v1/admin/settings/store-profile`
-14. [Remittance (COD Settlement)](#remittance-cod-settlement) — `/api/v1/admin/remittances`
-15. [Health Check](#health-check) — `/api/v1/ping`
+10. [Custom Requests](#custom-requests) — `/api/v1/custom-requests`, `/api/v1/admin/custom-requests`
+11. [Dashboard](#dashboard) — `/api/v1/admin/dashboard`
+12. [Audit Log](#audit-log) — `/api/v1/admin/audit`
+13. [Export](#export) — `/api/v1/admin/exports`
+14. [Store Profile](#store-profile) — `/api/v1/admin/settings/store-profile`
+15. [Remittance (COD Settlement)](#remittance-cod-settlement) — `/api/v1/admin/remittances`
+16. [Health Check](#health-check) — `/api/v1/ping`
 
 ---
 
@@ -742,7 +745,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 ---
 
 #### `POST /api/v1/admin/products/{id}/images`
-**Summary:** Upload a product image. `multipart/form-data`: part `file` (JPEG/PNG/WebP/AVIF, up to 5 MB) and optional query param `variantId`. The first image uploaded becomes `main` automatically.
+**Summary:** Upload a product image. `multipart/form-data`: part `file` (JPEG/PNG/WebP/AVIF, up to 5 MB) and optional query param `variantId`. The first image uploaded becomes `main` automatically. **The file's real bytes must be an image of an allowed type** — a file that only claims to be one (HTML renamed `.png`, a GIF, a PDF) is refused with `400 VALIDATION_FAILED`; the stored extension comes from the detected type, never from the filename.
 
 **Path/Query params:** `id` (path), `file` (multipart part, required), `variantId` (query, optional).
 
@@ -936,7 +939,7 @@ Unlike the storefront tree, every node carries `active` and the full `translatio
 ---
 
 #### `POST /api/v1/admin/categories/{id}/images`
-**Summary:** Upload (or replace) the `CARD` or `BANNER` image for a category. Each type holds exactly one image — uploading again with the same `imageType` deletes the old file and replaces it, it does not add a second image. Multipart, JPEG/PNG/WebP/AVIF up to 5 MB, same limits as product images.
+**Summary:** Upload (or replace) the `CARD` or `BANNER` image for a category. Each type holds exactly one image — uploading again with the same `imageType` deletes the old file and replaces it, it does not add a second image. Multipart, JPEG/PNG/WebP/AVIF up to 5 MB, same limits as product images. The same real-bytes check applies.
 
 **Request:** `multipart/form-data`
 - `file` — the image
@@ -2074,6 +2077,215 @@ An address a customer saved *before* the governorate closed is not deleted; it i
 
 ---
 
+## Custom Requests
+Base paths: `/api/v1/custom-requests` (public), `/api/v1/admin/custom-requests` (admin)
+
+A customer asks for a different size of a ready-made product, a product made to order, or fully custom work. **A request is not a sale.** It reserves no stock — not even a size request on a product that is in stock — and it has no price until staff quote one and the customer accepts. Converting an accepted request into an order is not built yet.
+
+| `type` | Meaning | Product | Dimensions |
+|---|---|---|---|
+| `SIZE_VARIANT` | A different size of a product we sell | **Required**, must be a ready-made product on sale | **At least one** of `widthCm` / `heightCm` / `depthCm` |
+| `MADE_TO_ORDER` | A product made after the order | Optional | Optional |
+| `CUSTOM_WORK` | Fully custom work | Optional | Optional |
+
+**Statuses**
+
+```
+NEW ──► CONTACTED ──► QUOTED ──► ACCEPTED ──► CONVERTED   (CONVERTED: not reachable yet)
+  └────────┴───────────┴──► REJECTED
+```
+
+| From | Staff can set directly | Also |
+|---|---|---|
+| `NEW` | `CONTACTED`, `REJECTED` | giving a quote makes it `QUOTED` |
+| `CONTACTED` | `REJECTED` | giving a quote makes it `QUOTED` |
+| `QUOTED` | `ACCEPTED`, `REJECTED` | a quote can be revised |
+| `ACCEPTED`, `REJECTED`, `CONVERTED` | nothing — final | |
+
+`QUOTED` is only ever reached by quoting, so a quoted request always has a quote, and **`ACCEPTED` is impossible without one**. `CONVERTED` is refused for now; `convertedOrderId` exists and is always `null`.
+
+The `requestNumber` (`REQ-2026-000001`) is sequential **with no gaps**, per year, and requests are never deleted — a rejected request is `REJECTED`, not removed. It is the number the customer is given, so quote it back to them exactly.
+
+### CustomRequestController — public
+
+#### `POST /api/v1/custom-requests`
+**Auth:** Public — no token. If a Bearer token is sent, the request is linked to that account (`customerId`); otherwise it is a guest request.
+**Summary:** Submit a custom request. **Limited to 10 per hour per client IP** (`429 RATE_LIMITED` beyond that; see *Rate limits and the client IP* in Conventions).
+
+**Request body:**
+```json
+{
+  "type": "SIZE_VARIANT",
+  "productId": 501,
+  "contactName": "محمد أحمد",
+  "phone": "01012345678",
+  "altPhone": null,
+  "email": "customer@example.com",
+  "governorateId": 1,
+  "area": "مدينة نصر",
+  "streetAddress": "12 شارع التسعين",
+  "widthCm": 120, "heightCm": 80, "depthCm": null,
+  "quantity": 2,
+  "notes": "أريده أعرض قليلاً"
+}
+```
+Required: `type`, `contactName` (max 150), `phone`, `governorateId`. `phone`/`altPhone` are normalized to E.164 (`+201012345678`). `email` must be well-formed, max 255. `widthCm`/`heightCm`/`depthCm` are centimetres, positive, up to 10000. `quantity` defaults to 1 (1–10000). `notes` up to 1000 characters. `area` ≤ 150, `streetAddress` ≤ 255.
+
+**Success response `201`:**
+```json
+{
+  "id": 77,
+  "requestNumber": "REQ-2026-000001",
+  "status": "NEW",
+  "attachmentToken": "77.1791040000.q3x…",
+  "attachmentTokenExpiresAt": "2026-10-03T12:00:00Z",
+  "createdAt": "2026-10-02T12:00:00Z"
+}
+```
+`attachmentToken` is **returned once and cannot be recovered**. It is the only proof the caller created this request, and `POST /{id}/attachments` requires it (below). Keep it for as long as the customer might still add photos; it is valid for **24 hours**. It is signed and bound to this one request, so it is useless for any other.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | A required field is missing or too long, a number is out of range, the email is malformed; or for `SIZE_VARIANT`: no `productId`, no dimension at all, or a product that is not ready-made |
+| 400 | INVALID_PHONE_FORMAT | `phone` or `altPhone` is not a valid Egyptian mobile number |
+| 404 | PRODUCT_NOT_FOUND | `productId` is unknown, a draft or archived — a public caller cannot tell these apart |
+| 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't exist. A **closed** governorate is accepted: a request is not a delivery |
+| 429 | RATE_LIMITED | More than 10 requests in an hour from this IP |
+
+---
+
+#### `POST /api/v1/custom-requests/{id}/attachments`
+**Auth:** Public, guarded by the request token.
+**Summary:** Attach one reference image — e.g. a photo of the part the customer wants changed. Call it once per image. **Limited to 30 attempts per hour per client IP**, failed attempts included.
+
+**Headers:** `X-Request-Token` — the `attachmentToken` from creation. A signed-in customer uploading to **their own** request may omit it.
+**Body:** `multipart/form-data`, part `file`.
+
+**Limits** (the same as product images, and they are enforced on the file's real bytes): JPEG, PNG, WebP or AVIF; **up to 5 MB**; **up to 5 images per request**. The file's first bytes must actually be an image of one of those types: a text file, a PDF, a GIF, or HTML renamed to `.png` is refused, whatever `Content-Type` it declares. The stored extension and `contentType` come from the detected type, never from the filename.
+
+Only while the request is `NEW`: once staff have contacted the customer, it stops taking images.
+
+**Success response `201`:**
+```json
+{ "id": 301, "url": "http://localhost:8081/uploads/custom-requests/2026/10/9f2c….png", "contentType": "image/png", "sizeBytes": 183422, "createdAt": "2026-10-02T12:01:00Z" }
+```
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | FILE_REQUIRED | No `file` part |
+| 400 | VALIDATION_FAILED | The file is empty, over 5 MB, not an allowed type, not really an image, or the request already has 5 images (`detail` says which) |
+| 404 | CUSTOM_REQUEST_NOT_FOUND | No such request — **and also** a missing, wrong, tampered, expired or other-request token. These are deliberately indistinguishable, so request ids cannot be probed |
+| 409 | CUSTOM_REQUEST_CLOSED | The request is no longer `NEW` |
+| 429 | RATE_LIMITED | More than 30 attempts in an hour from this IP |
+
+---
+
+### AdminCustomRequestController — `/api/v1/admin/custom-requests`
+All admin-only. Changes are audited: see *Audit Log*.
+
+#### `GET /api/v1/admin/custom-requests`
+**Summary:** Paged list, newest first.
+
+**Query params** (all optional, they compose):
+| Name | Type | Meaning |
+|---|---|---|
+| `status` | enum | `NEW` \| `CONTACTED` \| `QUOTED` \| `ACCEPTED` \| `REJECTED` \| `CONVERTED` |
+| `type` | enum | `SIZE_VARIANT` \| `MADE_TO_ORDER` \| `CUSTOM_WORK` |
+| `governorateId` | long | |
+| `q` | string | A **phone number** in any form (`01012345678`, `+201012345678`, `201012345678`) matches it exactly; any other text matches the contact name or request number, case-insensitively, as a substring. `%` and `_` are plain characters |
+| `from` / `to` | date `YYYY-MM-DD` | Created on or after / on or before that day, **inclusive**, in Cairo time |
+| `page` / `size` / `sort` | | `size` default 20; default sort `createdAt,desc` |
+
+An unknown `status` or `type` is `400 VALIDATION_FAILED`.
+
+**Success response `200`:**
+```json
+{
+  "content": [
+    {
+      "id": 77, "requestNumber": "REQ-2026-000001", "type": "SIZE_VARIANT", "status": "QUOTED",
+      "contactName": "محمد أحمد", "phone": "01012345678", "governorateName": "القاهرة",
+      "quantity": 2, "quotedAmount": 4500.5000, "attachmentCount": 3,
+      "createdAt": "2026-10-02T12:00:00Z", "updatedAt": "2026-10-02T15:10:00Z"
+    }
+  ],
+  "page": 0, "size": 20, "totalElements": 1, "totalPages": 1, "first": true, "last": true, "empty": false
+}
+```
+`phone` is in local format, for display.
+
+---
+
+#### `GET /api/v1/admin/custom-requests/{id}`
+**Summary:** One request with everything, including its images.
+
+**Success response `200`:**
+```json
+{
+  "id": 77, "requestNumber": "REQ-2026-000001", "type": "SIZE_VARIANT", "status": "QUOTED",
+  "product": { "id": 501, "slug": "classic-wallpaper", "name": "ورق حائط كلاسيك", "fulfillmentType": "READY_MADE" },
+  "customerId": null,
+  "contactName": "محمد أحمد", "phone": "01012345678", "altPhone": null, "email": "customer@example.com",
+  "governorateId": 1, "governorateName": "القاهرة", "area": "مدينة نصر", "streetAddress": "12 شارع التسعين",
+  "widthCm": 120.00, "heightCm": 80.00, "depthCm": null, "quantity": 2,
+  "notes": "أريده أعرض قليلاً",
+  "attachments": [ { "id": 301, "url": "http://localhost:8081/uploads/custom-requests/2026/10/9f2c….png", "contentType": "image/png", "sizeBytes": 183422, "createdAt": "2026-10-02T12:01:00Z" } ],
+  "quotedAmount": 4500.5000, "adminNote": "شامل التركيب", "convertedOrderId": null,
+  "createdAt": "2026-10-02T12:00:00Z", "updatedAt": "2026-10-02T15:10:00Z"
+}
+```
+`product` is `null` when the request is not about a product; `customerId` is `null` for a guest. `adminNote` is only the **latest** note and `quotedAmount` only the **latest** quote — earlier ones are in the audit log.
+
+**Error responses:** `404 CUSTOM_REQUEST_NOT_FOUND`.
+
+---
+
+#### `PATCH /api/v1/admin/custom-requests/{id}/status`
+**Summary:** Move a request along its statuses. Audited (`CUSTOM_REQUEST_STATUS_CHANGED`).
+
+**Request body:**
+```json
+{ "status": "CONTACTED", "note": "اتصلنا بالعميل" }
+```
+`status` required. Settable here: `CONTACTED`, `ACCEPTED`, `REJECTED` — see the table above. `note` (max 1000) becomes the request's latest `adminNote` and the audit entry's reason; **it is required for `REJECTED`**.
+
+**Success response `200`:** the updated request (same shape as `GET /{id}`).
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `status` missing; or `REJECTED` without a note |
+| 400 | INVALID_REQUEST_BODY | `status` is not one of the six values |
+| 404 | CUSTOM_REQUEST_NOT_FOUND | |
+| 409 | CUSTOM_REQUEST_QUOTE_REQUIRED | `ACCEPTED` from `NEW` or `CONTACTED`: quote it first |
+| 409 | INVALID_STATUS_TRANSITION | Anything else the table does not allow: setting `QUOTED` (quote instead), setting `CONVERTED` (not available yet), repeating the current status, or leaving `ACCEPTED` / `REJECTED` / `CONVERTED` |
+
+---
+
+#### `PATCH /api/v1/admin/custom-requests/{id}/quote`
+**Summary:** Give or change the quote. Audited (`CUSTOM_REQUEST_QUOTED`, old and new amount).
+
+**Request body:**
+```json
+{ "amount": 4500.50, "note": "شامل التركيب" }
+```
+`amount` required: the **tax-inclusive total for the whole request, all units** — what the customer would pay. Greater than zero, at most 100,000,000, rounded to four decimals. `note` is optional; when sent it replaces the latest `adminNote`.
+
+From `NEW` or `CONTACTED` this also moves the request to `QUOTED`. While `QUOTED` it can be revised as often as needed. Once the customer has accepted, or the request is rejected, it can no longer be quoted.
+
+**Success response `200`:** the updated request.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `amount` missing, zero, negative or implausibly large |
+| 404 | CUSTOM_REQUEST_NOT_FOUND | |
+| 409 | INVALID_STATUS_TRANSITION | The request is `ACCEPTED`, `REJECTED` or `CONVERTED` |
+
+---
+
 ## Dashboard
 Base path: `/api/v1/admin/dashboard`
 
@@ -2121,6 +2333,13 @@ Records staff-initiated changes (price edits, stock adjustments, publish/archive
 | `SHIPPING_RATE_CHANGED` | `PUT /admin/shipping/zones/{id}/max-shipping-cost` | `SHIPPING_ZONE` / `DELTA cap` | cap, or `none` when there is no cap, e.g. `1500.0000` → `none` |
 
 Amounts are stored to four decimals. `entityId` is the governorate id, the rate id, or the zone id respectively, so `GET /api/v1/admin/audit/GOVERNORATE/{governorateId}` returns everything that ever happened to one governorate — "who closed Aswan?". `actorName` is the staff member's name at the time. Filter all governorate events with `GET /api/v1/admin/audit?action=GOVERNORATE_SERVICE_CHANGED`.
+
+**Custom request events** — who contacted, quoted, accepted or rejected a customer. Same rules: only real changes are recorded, and the request keeps just the latest note and quote, so the audit log is the history.
+
+| `action` | Caused by | `entityType` / `entityLabel` | `oldValue` → `newValue`, `reason` |
+|---|---|---|---|
+| `CUSTOM_REQUEST_STATUS_CHANGED` | `PATCH /admin/custom-requests/{id}/status`, and the move to `QUOTED` when a request is first quoted | `CUSTOM_REQUEST` / `REQ-2026-000001` | status → status, e.g. `NEW` → `CONTACTED`. `reason` is the staff note |
+| `CUSTOM_REQUEST_QUOTED` | `PATCH /admin/custom-requests/{id}/quote`, when the amount changed | `CUSTOM_REQUEST` / `REQ-2026-000001` | amount → amount at four decimals, e.g. `4000.0000` → `5500.0000` (`oldValue` is empty for the first quote). `reason` is the note sent with the quote |
 
 ### `GET /api/v1/admin/audit`
 **Summary:** Paginated audit entries, newest first; optionally filter by action or actor.

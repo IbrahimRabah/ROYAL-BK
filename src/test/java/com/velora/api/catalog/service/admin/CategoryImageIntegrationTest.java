@@ -119,6 +119,7 @@ class CategoryImageIntegrationTest {
     }
 
     private MockMultipartFile jpeg(String filename) {
-        return new MockMultipartFile("file", filename, "image/jpeg", "fake-image-bytes".getBytes());
+        return new MockMultipartFile("file", filename, "image/jpeg",
+                com.velora.api.testsupport.TestImages.jpeg());
     }
 }

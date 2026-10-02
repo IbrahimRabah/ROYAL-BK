@@ -53,6 +53,11 @@ spring:
 
 server:
   port: 8081
+  # Behind ngrok or any reverse proxy the scheme and host the client used arrive in
+  # X-Forwarded-* headers; without this, generated links point at localhost:8081.
+  # The CLIENT IP is a separate matter — see ClientIpResolver, which reads
+  # X-Forwarded-For itself and only when the connection comes from a proxy.
+  forward-headers-strategy: framework
   error:
     include-message: always
 
@@ -105,6 +110,22 @@ velora:
       # numbers/emails in a row.
       max-per-ip: 10
       window-minutes: 60
+    custom-request:
+      # POST /custom-requests is public and writes a row, so without a cap it is a
+      # flooding endpoint.
+      max-per-ip: 10
+      window-minutes: 60
+    custom-request-upload:
+      # Separate from the above: ten requests x five 5 MB images is already 250 MB an
+      # hour from one address.
+      max-per-ip: 30
+      window-minutes: 60
+  custom-request:
+    # How long the token returned with a new request stays valid for attaching images.
+    # Long on purpose: the customer fills the form on a phone, photographs the thing
+    # they want changed, gets distracted and comes back. The protection is that the
+    # token is signed and bound to one request, not that it is short-lived.
+    attachment-token-hours: 24
   business:
     reservation-ttl-minutes: 20
     default-tax-rate: 0.14
