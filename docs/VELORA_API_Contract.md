@@ -1268,13 +1268,18 @@ Turns a cart into an order in one transaction: reserves stock (guarded atomic up
 ```
 Supply either `addressId` (signed-in) or `address` inline (required for guest checkout) — never both.
 
+**Shipping on the order** is calculated exactly as in `POST /api/v1/shipping/quote` (see that endpoint for the formula) and **frozen on the order**: `shippingCost`, `shippingCapApplied`, `shippingUncappedCost` and `shippingBreakdown` are a snapshot, so later price or cap changes never alter an existing order. Orders placed before shipping was priced per size class have `shippingBreakdown: null`, `shippingUncappedCost: null` and `shippingCapApplied: false` — render only `shippingCost` for those. `null` breakdown means "not recorded", not "no charge".
+
 **Success response `201`:**
 ```json
 {
   "id": 9042, "orderNumber": "VLR-260812-9042",
   "fulfillmentStatus": "PENDING", "paymentStatus": "PENDING", "paymentMethod": "COD", "currency": "EGP",
-  "subtotal": 8500.0000, "discountTotal": 0.0000, "shippingCost": 75.0000, "codFee": 25.0000,
-  "grandTotal": 8600.0000, "taxTotal": 1108.7000, "netTotal": 7491.3000,
+  "subtotal": 8500.0000, "discountTotal": 0.0000, "shippingCost": 0.0000,
+  "shippingCapApplied": false, "shippingUncappedCost": 0.0000,
+  "shippingBreakdown": [ { "sizeClass": "SMALL", "quantity": 1, "unitCost": 0.0000, "lineCost": 0.0000 } ],
+  "codFee": 25.0000,
+  "grandTotal": 8525.0000, "taxTotal": 1108.7000, "netTotal": 7416.3000,
   "contactName": "Mohammed Hassan", "contactPhone": "+201012345678", "contactAltPhone": null, "contactEmail": "mohammed316@gmail.com",
   "shippingAddress": {
     "governorateName": "القاهرة", "cityName": "القاهرة الجديدة", "area": "القاهرة الجديدة",
@@ -1311,7 +1316,8 @@ Supply either `addressId` (signed-in) or `address` inline (required for guest ch
 | 404 | RESOURCE_NOT_FOUND | `addressId` / `governorateId` doesn't exist, or a saved address doesn't belong to the caller (identical 404 either way) |
 | 409 | STOCK_UNAVAILABLE | A cart line blocks checkout (out of stock, quantity reduced, reservation could not be granted) |
 | 409 | GOVERNORATE_NOT_SERVED | VELORA does not deliver to the given governorate |
-| 409 | SHIPPING_RATE_NOT_CONFIGURED | No shipping rate configured for the resolved zone |
+| 409 | SHIPPING_SIZE_MISSING | A cart line's product has no `shippingSizeClass`; the `detail` names the SKU. Raised before stock is reserved, so nothing is held |
+| 409 | SHIPPING_RATE_NOT_CONFIGURED | The resolved zone has no rate for a size class in the cart |
 | 409 | PAYMENT_METHOD_UNAVAILABLE | `paymentMethod` is set to anything other than `COD` |
 | 409 | DUPLICATE_ORDER | Same `Idempotency-Key` reused while the original request is still processing |
 
@@ -1363,7 +1369,9 @@ Base path: `/api/v1/me/orders` (customer), `/api/v1/admin/orders` (admin)
 {
   "id": 4821, "orderNumber": "VLR-260809-4821", "fulfillmentStatus": "OUT_FOR_DELIVERY", "paymentStatus": "PENDING",
   "paymentMethod": "COD", "currency": "EGP",
-  "subtotal": 19500.0000, "discountTotal": 1500.0000, "shippingCost": 150.0000, "codFee": 50.0000,
+  "subtotal": 19500.0000, "discountTotal": 1500.0000, "shippingCost": 150.0000,
+  "shippingCapApplied": false, "shippingUncappedCost": null, "shippingBreakdown": null,
+  "codFee": 50.0000,
   "grandTotal": 18450.0000, "taxTotal": 2405.2174, "netTotal": 16044.7826,
   "contactName": "Mohammed Hassan", "contactPhone": "01012345678", "contactAltPhone": null, "contactEmail": "mohammed316@gmail.com",
   "shippingAddress": {
@@ -1859,6 +1867,28 @@ Response language follows `Accept-Language` (`ar` default, or `en`) — not a qu
 **Auth:** Public — no token required even for signed-in customers, used during guest checkout.
 **Summary:** Quote delivery cost and estimate for the current cart to a governorate. Cash-on-delivery assumed. Cheap enough to call on every governorate change.
 
+**How the cost is calculated** (the same calculation places an order):
+1. Every cart line is classified by its **product's** `shippingSizeClass` (`SMALL` \| `MEDIUM` \| `LARGE`).
+2. Each size class costs `unitCost(destination zone, size) × quantity`, where quantity is the total units of that size in the cart.
+3. `uncappedCost` is the sum of those lines.
+4. If the zone has a `maxShippingCost` and `uncappedCost` is **above** it, `shippingCost` is the cap and `shippingCapApplied` is `true`. Otherwise `shippingCost = uncappedCost`. A total exactly equal to the cap is not "capped".
+5. `codFee` is added on top of `shippingCost` in `estimatedTotal` and is never capped.
+
+`breakdown` always shows the real, uncapped lines (largest size first) so the screen can explain the number. Weight and the old free-shipping threshold are **no longer used**: `totalWeightGrams` is informational, `freeShippingThreshold` and `amountToFreeShipping` are always `null`, and `freeShippingApplied` is simply "`shippingCost` is zero" (Greater Cairo — free for every cart, no minimum).
+
+Initial prices, EGP per unit, cap 1500 in every zone:
+
+| Zone | SMALL | MEDIUM | LARGE |
+|---|---|---|---|
+| `GREATER_CAIRO` (Cairo, Giza, Qalyubia) | 0 | 0 | 0 |
+| `DELTA` | 100 | 200 | 400 |
+| `ALEXANDRIA` | 120 | 250 | 450 |
+| `CANAL` (Port Said, Ismailia, Suez) | 120 | 250 | 450 |
+| `UPPER_EGYPT` | 150 | 300 | 550 |
+| `REMOTE` (Sinai, Red Sea, New Valley, Matrouh) | 200 | 400 | 700 |
+
+`REMOTE` is an estimate pending a courier contract. Admin can change any of these — see `PUT /api/v1/admin/shipping/rates`.
+
 **Headers:** `Authorization` (optional — resolves the caller's own cart), `X-Guest-Token` (optional — resolves a guest cart; signature verified the same as on cart endpoints), `Accept-Language` (optional).
 
 **Request body:**
@@ -1869,13 +1899,19 @@ Response language follows `Accept-Language` (`ar` default, or `en`) — not a qu
 **Success response `200`:**
 ```json
 {
-  "governorateId": 19, "governorateName": "القاهرة", "zoneName": "القاهرة الكبرى",
-  "shippingCost": "70.00", "baseCost": "70.00", "codFee": "0.00",
-  "freeShippingApplied": false, "freeShippingThreshold": "1500.00", "amountToFreeShipping": "350.00",
-  "deliveryDaysMin": 1, "deliveryDaysMax": 3,
-  "orderSubtotal": "1150.00", "totalWeightGrams": 340, "estimatedTotal": "1220.00"
+  "governorateId": 8, "governorateName": "أسيوط", "zoneName": "صعيد مصر",
+  "shippingCost": "1500.00", "shippingCapApplied": true, "uncappedCost": "2950.00",
+  "breakdown": [
+    { "sizeClass": "LARGE", "quantity": 4, "unitCost": "550.00", "lineCost": "2200.00" },
+    { "sizeClass": "SMALL", "quantity": 5, "unitCost": "150.00", "lineCost": "750.00" }
+  ],
+  "codFee": "0.00",
+  "freeShippingApplied": false, "freeShippingThreshold": null, "amountToFreeShipping": null,
+  "deliveryDaysMin": 2, "deliveryDaysMax": 5,
+  "orderSubtotal": "42000.00", "totalWeightGrams": 3400, "estimatedTotal": "43500.00"
 }
 ```
+`baseCost` was removed from this response — `uncappedCost` replaces it.
 
 **Error responses:**
 | Status | Code | When |
@@ -1885,6 +1921,8 @@ Response language follows `Accept-Language` (`ar` default, or `en`) — not a qu
 | 401 | TOKEN_INVALID | `X-Guest-Token` signature is wrong, or unsigned and the transition flag is off |
 | 404 | RESOURCE_NOT_FOUND | `governorateId` doesn't match any governorate |
 | 409 | GOVERNORATE_NOT_SERVED | Governorate exists but has no configured shipping rate |
+| 409 | SHIPPING_SIZE_MISSING | A cart line's product has no `shippingSizeClass`; the `detail` names the SKU. Never guessed — the product needs a size set in the admin |
+| 409 | SHIPPING_RATE_NOT_CONFIGURED | The destination zone has no rate for a size class present in the cart |
 
 ---
 
@@ -1897,59 +1935,95 @@ Response language follows `Accept-Language` (`ar` default, or `en`) — not a qu
 **Success response `200`:**
 ```json
 [
-  { "id": 19, "code": "CAI", "name": "القاهرة", "zoneName": "القاهرة الكبرى", "shippingCost": "70.00", "deliveryDaysMin": 1, "deliveryDaysMax": 3, "served": true },
-  { "id": 24, "code": "WAD", "name": "الوادي الجديد", "zoneName": null, "shippingCost": null, "deliveryDaysMin": null, "deliveryDaysMax": null, "served": false }
+  {
+    "id": 19, "code": "CAI", "name": "القاهرة", "zoneName": "القاهرة الكبرى",
+    "shippingRates": [
+      { "sizeClass": "SMALL", "unitCost": "0.00" },
+      { "sizeClass": "MEDIUM", "unitCost": "0.00" },
+      { "sizeClass": "LARGE", "unitCost": "0.00" }
+    ],
+    "maxShippingCost": "1500.00", "deliveryDaysMin": 1, "deliveryDaysMax": 3, "served": true
+  },
+  { "id": 24, "code": "WAD", "name": "الوادي الجديد", "zoneName": null, "shippingRates": [], "maxShippingCost": null, "deliveryDaysMin": null, "deliveryDaysMax": null, "served": false }
 ]
 ```
+`shippingRates` is the cost of **one unit** of each size class (replaces the single `shippingCost` field, which was removed). The final price for a cart comes from `POST /api/v1/shipping/quote`.
 
 ---
 
 ### AdminShippingController — `/api/v1/admin/shipping`
 
 #### `GET /api/v1/admin/shipping/zones`
-**Summary:** Shipping zones with their active rate and covered governorates (Arabic names). Plain array, not paginated.
+**Summary:** Active shipping zones with their per-size rates, cap, and covered governorates (Arabic names). Plain array, not paginated.
 
 **Success response `200`:**
 ```json
 [
   {
-    "zoneId": 1, "code": "CAIRO_GIZA", "nameAr": "القاهرة والجيزة", "nameEn": "Cairo & Giza",
-    "baseCost": "70.00", "freeShippingOver": "1500.00", "codFee": "0.00",
+    "zoneId": 1, "code": "GREATER_CAIRO", "nameAr": "القاهرة الكبرى", "nameEn": "Greater Cairo",
+    "rates": [
+      { "sizeClass": "SMALL", "unitCost": "0.00" },
+      { "sizeClass": "MEDIUM", "unitCost": "0.00" },
+      { "sizeClass": "LARGE", "unitCost": "0.00" }
+    ],
+    "maxShippingCost": "1500.00", "codFee": "0.00",
     "deliveryDaysMin": 1, "deliveryDaysMax": 3, "active": true,
     "governorates": ["القاهرة", "الجيزة", "القليوبية"]
   },
   {
-    "zoneId": 2, "code": "UPPER_EGYPT", "nameAr": "صعيد مصر", "nameEn": "Upper Egypt",
-    "baseCost": null, "freeShippingOver": null, "codFee": null,
+    "zoneId": 5, "code": "UPPER_EGYPT", "nameAr": "صعيد مصر", "nameEn": "Upper Egypt",
+    "rates": [], "maxShippingCost": null, "codFee": null,
     "deliveryDaysMin": 0, "deliveryDaysMax": 0, "active": true, "governorates": []
   }
 ]
 ```
-Rate fields are `null` and delivery days `0` when the zone has no active rate yet.
+`rates` holds the cost of **one unit** per size class and is empty (and `codFee` `null`, delivery days `0`) when the zone has no active rate yet. `baseCost` and `freeShippingOver` were removed from this response.
 
 ---
 
 #### `PUT /api/v1/admin/shipping/rates`
-**Summary:** Set (create or replace) the rate for a zone. Replaces the zone's existing active rate rather than adding a second one.
+**Summary:** Set (create or replace) the price of **one size class** in a zone. One row exists per (zone, size class); this replaces that row rather than adding a second one.
 
 **Request body:**
 ```json
 {
-  "zoneId": 1, "baseCost": "70.00", "maxWeightGrams": 2000, "costPerExtraKg": "15.00",
-  "freeShippingOver": "1500.00", "codFee": "0.00", "deliveryDaysMin": 1, "deliveryDaysMax": 3
+  "zoneId": 5, "sizeClass": "MEDIUM", "baseCost": "300.00",
+  "codFee": "0.00", "deliveryDaysMin": 2, "deliveryDaysMax": 5
 }
 ```
-`zoneId`/`baseCost` required, `baseCost >= 0`. `maxWeightGrams`: optional (null = ignore weight). `costPerExtraKg`/`codFee`: default 0. `deliveryDaysMin`/`Max`: optional, `>= 0`.
+`zoneId`, `sizeClass` (`SMALL` \| `MEDIUM` \| `LARGE`) and `baseCost` are required. `baseCost` is the cost of **one unit** of that size, `>= 0` (zero means free). `codFee` and `deliveryDaysMin`/`Max` describe the **whole zone**, not one size: when sent they are written to every size row of the zone, and `null` leaves them unchanged. `deliveryDaysMin`/`Max` are `>= 0`.
+
+`maxWeightGrams`, `costPerExtraKg` and `freeShippingOver` were removed from this request — shipping no longer uses weight or a free threshold. The cap is set separately, below.
 
 **Success response `200`:**
 ```json
-{ "id": 1 }
+{ "id": 14 }
 ```
 
 **Error responses:**
 | Status | Code | When |
 |---|---|---|
-| 400 | VALIDATION_FAILED | `zoneId`/`baseCost` missing, `baseCost` negative, or `deliveryDaysMin > deliveryDaysMax` |
+| 400 | VALIDATION_FAILED | `zoneId`/`sizeClass`/`baseCost` missing, `baseCost` negative, or `deliveryDaysMin > deliveryDaysMax` |
+| 400 | INVALID_REQUEST_BODY | `sizeClass` is not one of the three values |
+| 404 | RESOURCE_NOT_FOUND | `zoneId` doesn't match any shipping zone |
+
+---
+
+#### `PUT /api/v1/admin/shipping/zones/{zoneId}/max-shipping-cost`
+**Summary:** Set or remove a zone's shipping cap — the most one order's shipping can cost in that zone.
+
+**Request body:**
+```json
+{ "maxShippingCost": "1500.00" }
+```
+`maxShippingCost >= 0`. `null` removes the cap (shipping is then the plain per-unit total).
+
+**Success response `200`:** empty body.
+
+**Error responses:**
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `maxShippingCost` is negative |
 | 404 | RESOURCE_NOT_FOUND | `zoneId` doesn't match any shipping zone |
 
 ---

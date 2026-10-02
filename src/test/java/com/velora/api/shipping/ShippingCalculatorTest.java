@@ -1,16 +1,32 @@
 package com.velora.api.shipping;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.velora.api.catalog.domain.ShippingSizeClass;
+import com.velora.api.common.exception.BusinessException;
+import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.shipping.domain.ShippingRate;
 import com.velora.api.shipping.domain.ShippingZone;
+import com.velora.api.shipping.dto.ShippingBreakdownLine;
 import com.velora.api.shipping.service.ShippingCalculator;
+import com.velora.api.shipping.service.ShippingCalculator.Line;
+import com.velora.api.shipping.service.ZoneRates;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static com.velora.api.catalog.domain.ShippingSizeClass.LARGE;
+import static com.velora.api.catalog.domain.ShippingSizeClass.MEDIUM;
+import static com.velora.api.catalog.domain.ShippingSizeClass.SMALL;
+
+/**
+ * Shipping = sum( unit cost of (zone, size) x quantity ), capped per zone.
+ * The calculator is pure, so no database is involved.
+ */
 class ShippingCalculatorTest {
 
     private ShippingCalculator calculator;
@@ -20,157 +36,193 @@ class ShippingCalculatorTest {
         calculator = new ShippingCalculator();
     }
 
-    @Nested
-    @DisplayName("Flat rate — VELORA's current pricing")
-    class FlatRate {
+    @Test
+    @DisplayName("Different size classes are priced separately and summed")
+    void mixedSizesAreSummed() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
 
-        @Test
-        @DisplayName("Cairo and Lower Egypt: 70 EGP regardless of order value")
-        void lowerEgyptIsSeventy() {
-            ShippingRate rate = flatRate("70.00");
+        var result = calculator.calculate(delta,
+                List.of(line(LARGE, 1), line(SMALL, 2), line(MEDIUM, 1)), true);
 
-            var cheap = calculator.calculate(rate, new BigDecimal("500"), 200, true);
-            var expensive = calculator.calculate(rate, new BigDecimal("50000"), 200, true);
-
-            assertThat(cheap.shippingCost()).isEqualByComparingTo("70.00");
-            assertThat(expensive.shippingCost()).isEqualByComparingTo("70.00");
-        }
-
-        @Test
-        @DisplayName("Upper Egypt: 100 EGP")
-        void upperEgyptIsOneHundred() {
-            var result = calculator.calculate(
-                    flatRate("100.00"), new BigDecimal("2400"), 240, true);
-
-            assertThat(result.shippingCost()).isEqualByComparingTo("100.00");
-            assertThat(result.freeShippingApplied()).isFalse();
-            assertThat(result.freeShippingThreshold()).isNull();
-        }
-
-        @Test
-        @DisplayName("Weight is ignored when the rate is flat")
-        void weightIsIgnored() {
-            ShippingRate rate = flatRate("70.00");
-
-            var light = calculator.calculate(rate, new BigDecimal("1000"), 100, true);
-            var heavy = calculator.calculate(rate, new BigDecimal("1000"), 25000, true);
-
-            assertThat(heavy.shippingCost()).isEqualByComparingTo(light.shippingCost());
-        }
-
-        @Test
-        void codFeeIsZeroToday() {
-            var result = calculator.calculate(
-                    flatRate("70.00"), new BigDecimal("1000"), 200, true);
-
-            assertThat(result.codFee()).isEqualByComparingTo("0.00");
-            assertThat(result.totalDeliveryCharge()).isEqualByComparingTo("70.00");
-        }
+        // 400 + 2*100 + 200
+        assertThat(result.shippingCost()).isEqualByComparingTo("800.00");
+        assertThat(result.uncappedCost()).isEqualByComparingTo("800.00");
+        assertThat(result.capApplied()).isFalse();
     }
 
-    @Nested
-    @DisplayName("Free-shipping threshold — configured but off today")
-    class FreeShipping {
+    @Test
+    @DisplayName("The breakdown lists the largest size first, with unit and line cost")
+    void breakdownIsLargestFirst() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
 
-        @Test
-        void appliesAtOrAboveTheThreshold() {
-            ShippingRate rate = flatRate("70.00");
-            rate.setFreeShippingOver(new BigDecimal("2000"));
+        var result = calculator.calculate(delta, List.of(line(SMALL, 2), line(LARGE, 1)), true);
 
-            var exactly = calculator.calculate(rate, new BigDecimal("2000"), 200, true);
-            var above = calculator.calculate(rate, new BigDecimal("2500"), 200, true);
-
-            assertThat(exactly.shippingCost()).isEqualByComparingTo("0.00");
-            assertThat(exactly.freeShippingApplied()).isTrue();
-            assertThat(above.freeShippingApplied()).isTrue();
-        }
-
-        @Test
-        @DisplayName("Below the threshold, reports how much more to spend")
-        void reportsTheGap() {
-            ShippingRate rate = flatRate("70.00");
-            rate.setFreeShippingOver(new BigDecimal("2000"));
-
-            var result = calculator.calculate(rate, new BigDecimal("1750"), 200, true);
-
-            assertThat(result.shippingCost()).isEqualByComparingTo("70.00");
-            assertThat(result.freeShippingApplied()).isFalse();
-            // "Spend 250 more for free delivery" is worth real money in conversion.
-            assertThat(result.amountToFreeShipping()).isEqualByComparingTo("250.00");
-        }
-
-        @Test
-        @DisplayName("baseCost still reports what shipping would have cost")
-        void keepsTheUndiscountedCost() {
-            ShippingRate rate = flatRate("70.00");
-            rate.setFreeShippingOver(new BigDecimal("2000"));
-
-            var result = calculator.calculate(rate, new BigDecimal("3000"), 200, true);
-
-            assertThat(result.shippingCost()).isEqualByComparingTo("0.00");
-            assertThat(result.baseCost()).isEqualByComparingTo("70.00");
-        }
+        assertThat(result.breakdown()).extracting(ShippingBreakdownLine::sizeClass)
+                .containsExactly(LARGE, SMALL);
+        ShippingBreakdownLine small = result.breakdown().get(1);
+        assertThat(small.quantity()).isEqualTo(2);
+        assertThat(small.unitCost()).isEqualByComparingTo("100.00");
+        assertThat(small.lineCost()).isEqualByComparingTo("200.00");
     }
 
-    @Nested
-    @DisplayName("Weight tiers — ready, not switched on")
-    class WeightBased {
+    @Test
+    @DisplayName("Two lines of the same size class collapse into one breakdown line")
+    void sameSizeLinesAreMerged() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
 
-        @Test
-        void noSurchargeWithinTheIncludedWeight() {
-            var result = calculator.calculate(
-                    weightRate("70.00", 1000, "15.00"), new BigDecimal("1000"), 900, true);
+        var result = calculator.calculate(delta,
+                List.of(line(SMALL, 2), line(SMALL, 3)), true);
 
-            assertThat(result.shippingCost()).isEqualByComparingTo("70.00");
+        assertThat(result.breakdown()).hasSize(1);
+        assertThat(result.breakdown().get(0).quantity()).isEqualTo(5);
+        assertThat(result.shippingCost()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    @DisplayName("A total above the zone cap is replaced by the cap, and says so")
+    void capIsApplied() {
+        ZoneRates upperEgypt = zone("UPPER_EGYPT", "1500", "150", "300", "550");
+
+        // 4 x 550 + 5 x 150 = 2950
+        var result = calculator.calculate(upperEgypt,
+                List.of(line(LARGE, 4), line(SMALL, 5)), true);
+
+        assertThat(result.uncappedCost()).isEqualByComparingTo("2950.00");
+        assertThat(result.shippingCost()).isEqualByComparingTo("1500.00");
+        assertThat(result.capApplied()).isTrue();
+        // The breakdown still shows the real, uncapped lines.
+        assertThat(result.breakdown()).extracting(ShippingBreakdownLine::lineCost)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .containsExactly(new BigDecimal("2200.00"), new BigDecimal("750.00"));
+    }
+
+    @Test
+    @DisplayName("A total exactly equal to the cap is not 'capped'")
+    void totalEqualToCapIsNotCapped() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
+
+        var result = calculator.calculate(delta, List.of(line(SMALL, 15)), true);
+
+        assertThat(result.shippingCost()).isEqualByComparingTo("1500.00");
+        assertThat(result.capApplied()).isFalse();
+    }
+
+    @Test
+    @DisplayName("A zone with no cap charges the full total")
+    void noCapChargesEverything() {
+        ZoneRates uncapped = zone("DELTA", null, "100", "200", "400");
+
+        var result = calculator.calculate(uncapped, List.of(line(LARGE, 10)), true);
+
+        assertThat(result.shippingCost()).isEqualByComparingTo("4000.00");
+        assertThat(result.capApplied()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Greater Cairo is free whatever is in the cart, with no minimum order")
+    void cairoIsFree() {
+        ZoneRates cairo = zone("GREATER_CAIRO", "1500", "0", "0", "0");
+
+        var result = calculator.calculate(cairo,
+                List.of(line(SMALL, 1), line(LARGE, 7)), true);
+
+        assertThat(result.shippingCost()).isEqualByComparingTo("0.00");
+        assertThat(result.uncappedCost()).isEqualByComparingTo("0.00");
+        assertThat(result.capApplied()).isFalse();
+        assertThat(result.freeShippingApplied()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A paid zone is not reported as free shipping")
+    void paidZoneIsNotFree() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
+
+        assertThat(calculator.calculate(delta, List.of(line(SMALL, 1)), true)
+                .freeShippingApplied()).isFalse();
+    }
+
+    @Test
+    @DisplayName("A line whose product has no size class is refused, naming the SKU")
+    void nullSizeIsRefused() {
+        ZoneRates delta = zone("DELTA", "1500", "100", "200", "400");
+
+        assertThatThrownBy(() -> calculator.calculate(delta,
+                List.of(line(SMALL, 1), new Line(null, 2, "WCH-NO-SIZE")), true))
+                .isInstanceOfSatisfying(BusinessException.class, e -> {
+                    assertThat(e.getErrorCode()).isEqualTo(ErrorCode.SHIPPING_SIZE_MISSING);
+                    assertThat(e.getMessage()).contains("WCH-NO-SIZE");
+                });
+    }
+
+    @Test
+    @DisplayName("A size with no configured rate in the zone is refused, not priced at zero")
+    void missingRateForSizeIsRefused() {
+        ZoneRates smallOnly = new ZoneRates(List.of(rate(zoneEntity("DELTA", "1500"), SMALL, "100")));
+
+        assertThatThrownBy(() -> calculator.calculate(smallOnly, List.of(line(LARGE, 1)), true))
+                .isInstanceOfSatisfying(BusinessException.class, e ->
+                        assertThat(e.getErrorCode())
+                                .isEqualTo(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED));
+    }
+
+    @Test
+    @DisplayName("The COD fee is added on top and is never capped")
+    void codFeeIsNotCapped() {
+        ShippingZone zone = zoneEntity("UPPER_EGYPT", "1500");
+        List<ShippingRate> rates = new ArrayList<>();
+        for (var entry : List.of(new Object[] {SMALL, "150"}, new Object[] {LARGE, "550"})) {
+            ShippingRate r = rate(zone, (ShippingSizeClass) entry[0], (String) entry[1]);
+            r.setCodFee(new BigDecimal("25"));
+            rates.add(r);
         }
 
-        @Test
-        @DisplayName("Part of a kilo is billed as a whole one, like couriers do")
-        void roundsPartialKilosUp() {
-            ShippingRate rate = weightRate("70.00", 1000, "15.00");
+        var result = calculator.calculate(new ZoneRates(rates),
+                List.of(line(LARGE, 4), line(SMALL, 5)), true);
 
-            // 1,200 g = 200 g over = 1 chargeable kilo
-            var justOver = calculator.calculate(rate, new BigDecimal("1000"), 1200, true);
-            assertThat(justOver.shippingCost()).isEqualByComparingTo("85.00");
+        assertThat(result.shippingCost()).isEqualByComparingTo("1500.00");
+        assertThat(result.codFee()).isEqualByComparingTo("25.00");
+        assertThat(result.totalDeliveryCharge()).isEqualByComparingTo("1525.00");
+    }
 
-            // 3,100 g = 2,100 g over = 3 chargeable kilos
-            var heavier = calculator.calculate(rate, new BigDecimal("1000"), 3100, true);
-            assertThat(heavier.shippingCost()).isEqualByComparingTo("115.00");
-        }
+    @Test
+    @DisplayName("No COD fee when cash is not collected")
+    void noCodFeeWithoutCod() {
+        ShippingZone zone = zoneEntity("DELTA", "1500");
+        ShippingRate r = rate(zone, SMALL, "100");
+        r.setCodFee(new BigDecimal("25"));
 
-        @Test
-        @DisplayName("Free shipping waives the weight surcharge too")
-        void freeShippingCoversTheSurcharge() {
-            ShippingRate rate = weightRate("70.00", 1000, "15.00");
-            rate.setFreeShippingOver(new BigDecimal("2000"));
+        var result = calculator.calculate(new ZoneRates(List.of(r)), List.of(line(SMALL, 1)), false);
 
-            var result = calculator.calculate(rate, new BigDecimal("2500"), 5000, true);
-
-            assertThat(result.shippingCost()).isEqualByComparingTo("0.00");
-            assertThat(result.baseCost()).isEqualByComparingTo("130.00");
-        }
+        assertThat(result.codFee()).isEqualByComparingTo("0.00");
     }
 
     // ------------------------------------------------------------------ helpers
 
-    private ShippingRate flatRate(String cost) {
-        ShippingZone zone = new ShippingZone();
-        zone.setCode("TEST");
-        zone.setNameAr("اختبار");
-        zone.setNameEn("Test");
-
-        ShippingRate rate = new ShippingRate();
-        rate.setZone(zone);
-        rate.setBaseCost(new BigDecimal(cost));
-        rate.setCostPerExtraKg(BigDecimal.ZERO);
-        rate.setCodFee(BigDecimal.ZERO);
-        return rate;
+    private static Line line(ShippingSizeClass size, int quantity) {
+        return new Line(size, quantity, "SKU-" + size);
     }
 
-    private ShippingRate weightRate(String cost, int includedGrams, String perKg) {
-        ShippingRate rate = flatRate(cost);
-        rate.setMaxWeightGrams(includedGrams);
-        rate.setCostPerExtraKg(new BigDecimal(perKg));
+    private static ZoneRates zone(String code, String cap, String small, String medium,
+                                  String large) {
+        ShippingZone zone = zoneEntity(code, cap);
+        return new ZoneRates(List.of(
+                rate(zone, SMALL, small), rate(zone, MEDIUM, medium), rate(zone, LARGE, large)));
+    }
+
+    private static ShippingZone zoneEntity(String code, String cap) {
+        ShippingZone zone = new ShippingZone();
+        zone.setCode(code);
+        zone.setNameAr(code);
+        zone.setNameEn(code);
+        zone.setMaxShippingCost(cap == null ? null : new BigDecimal(cap));
+        return zone;
+    }
+
+    private static ShippingRate rate(ShippingZone zone, ShippingSizeClass size, String cost) {
+        ShippingRate rate = new ShippingRate();
+        rate.setZone(zone);
+        rate.setSizeClass(size);
+        rate.setBaseCost(new BigDecimal(cost));
         return rate;
     }
 }

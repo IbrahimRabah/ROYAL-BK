@@ -12,12 +12,12 @@ import com.velora.api.shipping.domain.Governorate;
 import com.velora.api.shipping.domain.ShippingRate;
 import com.velora.api.shipping.dto.GovernorateResponse;
 import com.velora.api.shipping.dto.ShippingQuoteResponse;
+import com.velora.api.shipping.dto.SizeRateResponse;
 import com.velora.api.shipping.repository.GovernorateRepository;
 import com.velora.api.shipping.repository.ShippingRateRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -68,18 +68,28 @@ public class ShippingService {
 
         List<GovernorateResponse> result = new ArrayList<>();
         for (Governorate governorate : governorates) {
-            Optional<ShippingRate> rate =
-                    rateRepository.findForGovernorate(governorate.getId());
+            List<ShippingRate> found = rateRepository.findAllForGovernorate(governorate.getId());
+            if (found.isEmpty()) {
+                result.add(new GovernorateResponse(governorate.getId(), governorate.getCode(),
+                        governorate.nameFor(locale), null, List.of(), null, null, null, false));
+                continue;
+            }
+
+            ZoneRates rates = new ZoneRates(found);
+            List<SizeRateResponse> sizeRates = found.stream()
+                    .map(r -> new SizeRateResponse(r.getSizeClass(), MoneyUtils.round(r.getBaseCost())))
+                    .toList();
 
             result.add(new GovernorateResponse(
                     governorate.getId(),
                     governorate.getCode(),
                     governorate.nameFor(locale),
-                    rate.map(r -> r.getZone().nameFor(locale)).orElse(null),
-                    rate.map(ShippingRate::getBaseCost).orElse(null),
-                    rate.map(r -> (int) r.getDeliveryDaysMin()).orElse(null),
-                    rate.map(r -> (int) r.getDeliveryDaysMax()).orElse(null),
-                    rate.isPresent()));
+                    rates.zone().nameFor(locale),
+                    sizeRates,
+                    rates.maxShippingCost(),
+                    (int) rates.deliveryDaysMin(),
+                    (int) rates.deliveryDaysMax(),
+                    true));
         }
         return result;
     }
@@ -98,32 +108,35 @@ public class ShippingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Governorate not found"));
 
-        ShippingRate rate = rateRepository.findForGovernorate(governorateId)
-                .orElseThrow(() -> {
-                    log.warn("No shipping rate configured for governorate {} ({})",
-                            governorateId, governorate.getCode());
-                    return new BusinessException(ErrorCode.GOVERNORATE_NOT_SERVED,
-                            "We do not deliver to %s yet".formatted(governorate.nameFor(locale)));
-                });
+        List<ShippingRate> found = rateRepository.findAllForGovernorate(governorateId);
+        if (found.isEmpty()) {
+            log.warn("No shipping rate configured for governorate {} ({})",
+                    governorateId, governorate.getCode());
+            throw new BusinessException(ErrorCode.GOVERNORATE_NOT_SERVED,
+                    "We do not deliver to %s yet".formatted(governorate.nameFor(locale)));
+        }
+        ZoneRates rates = new ZoneRates(found);
 
         Cart cart = resolveCart(userId, guestToken, explicitCartId);
         BigDecimal subtotal = subtotalOf(cart);
         int weight = weightOf(cart);
 
-        var calculation = calculator.calculate(rate, subtotal, weight, codApplies);
+        var calculation = calculator.calculate(rates, shippingLinesOf(cart), codApplies);
 
         return new ShippingQuoteResponse(
                 governorate.getId(),
                 governorate.nameFor(locale),
-                rate.getZone().nameFor(locale),
+                rates.zone().nameFor(locale),
                 calculation.shippingCost(),
-                calculation.baseCost(),
+                calculation.capApplied(),
+                calculation.uncappedCost(),
+                calculation.breakdown(),
                 calculation.codFee(),
                 calculation.freeShippingApplied(),
-                calculation.freeShippingThreshold(),
-                calculation.amountToFreeShipping(),
-                rate.getDeliveryDaysMin(),
-                rate.getDeliveryDaysMax(),
+                null,
+                null,
+                rates.deliveryDaysMin(),
+                rates.deliveryDaysMax(),
                 subtotal,
                 weight,
                 MoneyUtils.round(subtotal.add(calculation.totalDeliveryCharge())));
@@ -133,14 +146,13 @@ public class ShippingService {
      * The rate for an order being created. Throws rather than returning empty,
      * because an order cannot be priced without it.
      */
-    public ShippingRate requireRateFor(Long governorateId) {
-        return rateRepository.findForGovernorate(governorateId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED,
-                        "No shipping rate is configured for this governorate"));
-    }
-
-    public ShippingCalculator getCalculator() {
-        return calculator;
+    public ZoneRates requireRatesFor(Long governorateId) {
+        List<ShippingRate> found = rateRepository.findAllForGovernorate(governorateId);
+        if (found.isEmpty()) {
+            throw new BusinessException(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED,
+                    "No shipping rate is configured for this governorate");
+        }
+        return new ZoneRates(found);
     }
 
     // ------------------------------------------------------------------ internal
@@ -164,6 +176,18 @@ public class ShippingService {
         }
         throw new BusinessException(ErrorCode.CART_EMPTY,
                 "Sign in, or send an X-Guest-Token header");
+    }
+
+    /** Each cart line's product size class and quantity — what shipping is priced from. */
+    private List<ShippingCalculator.Line> shippingLinesOf(Cart cart) {
+        List<ShippingCalculator.Line> lines = new ArrayList<>();
+        for (CartItem item : cart.getItems()) {
+            lines.add(new ShippingCalculator.Line(
+                    item.getVariant().getProduct().getShippingSizeClass(),
+                    item.getQuantity(),
+                    item.getVariant().getSku()));
+        }
+        return lines;
     }
 
     /** Priced from the CURRENT variant price, exactly like the cart does. */

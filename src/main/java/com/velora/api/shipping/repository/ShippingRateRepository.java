@@ -1,21 +1,21 @@
 package com.velora.api.shipping.repository;
 
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.shipping.domain.ShippingRate;
 import java.util.List;
 import java.util.Optional;
-
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.jpa.repository.EntityGraph;
+
 public interface ShippingRateRepository extends JpaRepository<ShippingRate, Long> {
 
     /**
-     * The rate for a governorate, in one query.
+     * Every active rate for a governorate's zone — one per size class, in one query.
      *
-     * <p>Because a governorate maps to exactly one zone, this can never return two
-     * competing rates for the same destination.
+     * <p>Because a governorate maps to exactly one zone, all rows returned belong to
+     * the same zone and no two rows share a size class (unique on zone + size).
      */
     @EntityGraph(attributePaths = {"zone"})
     @Query("""
@@ -25,10 +25,12 @@ public interface ShippingRateRepository extends JpaRepository<ShippingRate, Long
             where zg.governorate.id = :governorateId
               and r.active = true
               and z.active = true
+            order by r.sizeClass
             """)
-    Optional<ShippingRate> findForGovernorate(@Param("governorateId") Long governorateId);
+    List<ShippingRate> findAllForGovernorate(@Param("governorateId") Long governorateId);
 
-    List<ShippingRate> findByActiveTrueOrderByIdAsc();
+    @EntityGraph(attributePaths = {"zone"})
+    List<ShippingRate> findByZoneIdAndActiveTrueOrderBySizeClassAsc(Long zoneId);
 
-    Optional<ShippingRate> findByZoneIdAndActiveTrue(Long zoneId);
+    Optional<ShippingRate> findByZoneIdAndSizeClass(Long zoneId, ShippingSizeClass sizeClass);
 }

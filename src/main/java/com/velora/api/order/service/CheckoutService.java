@@ -29,10 +29,12 @@ import com.velora.api.order.event.OrderPlacedEvent;
 import com.velora.api.order.repository.OrderRepository;
 import com.velora.api.order.repository.OrderStatusHistoryRepository;
 import com.velora.api.shipping.domain.Governorate;
-import com.velora.api.shipping.domain.ShippingRate;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.shipping.repository.GovernorateRepository;
+import com.velora.api.shipping.service.ShippingBreakdownJson;
 import com.velora.api.shipping.service.ShippingCalculator;
 import com.velora.api.shipping.service.ShippingService;
+import com.velora.api.shipping.service.ZoneRates;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -70,6 +72,7 @@ public class CheckoutService {
     private final ReservationService reservationService;
     private final ShippingService shippingService;
     private final ShippingCalculator shippingCalculator;
+    private final ShippingBreakdownJson shippingBreakdownJson;
     private final AddressService addressService;
     private final GovernorateRepository governorateRepository;
     private final AppUserRepository userRepository;
@@ -83,6 +86,7 @@ public class CheckoutService {
                            ReservationService reservationService,
                            ShippingService shippingService,
                            ShippingCalculator shippingCalculator,
+                           ShippingBreakdownJson shippingBreakdownJson,
                            AddressService addressService,
                            GovernorateRepository governorateRepository,
                            AppUserRepository userRepository,
@@ -95,6 +99,7 @@ public class CheckoutService {
         this.reservationService = reservationService;
         this.shippingService = shippingService;
         this.shippingCalculator = shippingCalculator;
+        this.shippingBreakdownJson = shippingBreakdownJson;
         this.addressService = addressService;
         this.governorateRepository = governorateRepository;
         this.userRepository = userRepository;
@@ -126,7 +131,7 @@ public class CheckoutService {
                         "Governorate not found"));
 
         // 3. Shipping. Throws before any stock is touched if we do not deliver there.
-        ShippingRate rate = shippingService.requireRateFor(governorate.getId());
+        ZoneRates rates = shippingService.requireRatesFor(governorate.getId());
 
         /*
          * 4. Capture every value the order needs, BEFORE reserving.
@@ -143,6 +148,15 @@ public class CheckoutService {
          */
         List<LineSnapshot> lines = captureLines(cart, locale);
 
+        // 4b. Price the shipping now, still before any write: a product with no size
+        //     class refuses the order here instead of after stock was reserved.
+        ShippingCalculator.Calculation shipping = shippingCalculator.calculate(rates,
+                lines.stream()
+                        .map(l -> new ShippingCalculator.Line(
+                                l.shippingSizeClass(), l.quantity(), l.sku()))
+                        .toList(),
+                true);
+
         // 5. Reserve stock. First write of the transaction, so a shortage costs
         //    nothing but a rolled-back read.
         Map<ProductVariant, Integer> quantities = new LinkedHashMap<>();
@@ -152,7 +166,7 @@ public class CheckoutService {
         reservationService.reserveAll(quantities, cart.getId());
 
         // 6. Money.
-        Totals totals = calculateTotals(lines, rate);
+        Totals totals = calculateTotals(lines, shipping);
 
         // 7. The order, with everything copied.
         AppUser customer = userId == null ? null : userRepository.findById(userId).orElse(null);
@@ -168,9 +182,14 @@ public class CheckoutService {
 
         applyContactAndAddress(order, address, governorate, customer);
 
-        order.setShippingZoneName(rate.getZone().nameFor(locale));
-        order.setDeliveryDaysMin(rate.getDeliveryDaysMin());
-        order.setDeliveryDaysMax(rate.getDeliveryDaysMax());
+        order.setShippingZoneName(rates.zone().nameFor(locale));
+        order.setDeliveryDaysMin(rates.deliveryDaysMin());
+        order.setDeliveryDaysMax(rates.deliveryDaysMax());
+        // The snapshot carries HOW the cost was built, not just the figure: prices and
+        // caps change, and the order must still explain its own shipping afterwards.
+        order.setShippingBreakdown(shippingBreakdownJson.toJson(shipping.breakdown()));
+        order.setShippingCapApplied(shipping.capApplied());
+        order.setShippingUncappedCost(shipping.uncappedCost());
 
         order.setSubtotalGross(totals.subtotal());
         order.setDiscountTotal(totals.discount());
@@ -231,6 +250,7 @@ public class CheckoutService {
                     variant.getPrice(),
                     variant.getTaxRate(),
                     variant.getWeightGrams(),
+                    product.getShippingSizeClass(),
                     item.getQuantity()));
         }
         return lines;
@@ -243,7 +263,8 @@ public class CheckoutService {
      * makes the invoice disagree with its own lines by a piastre or two — the kind
      * of thing an accountant notices immediately.
      */
-    private Totals calculateTotals(List<LineSnapshot> lines, ShippingRate rate) {
+    private Totals calculateTotals(List<LineSnapshot> lines,
+                                   ShippingCalculator.Calculation shipping) {
         BigDecimal subtotal = MoneyUtils.ZERO;
         List<BigDecimal> lineTotals = new ArrayList<>();
 
@@ -261,14 +282,6 @@ public class CheckoutService {
         // The share of the discount each line carries. Stored on the line, because
         // after the order exists there is no way to derive it again.
         List<BigDecimal> allocations = MoneyUtils.allocate(discount, lineTotals);
-
-        int weight = 0;
-        for (LineSnapshot line : lines) {
-            weight += line.weightGrams() * line.quantity();
-        }
-
-        ShippingCalculator.Calculation shipping = shippingCalculator.calculate(
-                rate, subtotal, weight, true);
 
         // Tax per line, on the discounted amount, then summed.
         BigDecimal tax = MoneyUtils.ZERO;
@@ -438,7 +451,7 @@ public class CheckoutService {
             ProductVariant variant, Product product,
             String nameAr, String nameEn, String sku, String variantSummary,
             String imageUrl, BigDecimal unitPrice, BigDecimal taxRate,
-            int weightGrams, int quantity) {
+            int weightGrams, ShippingSizeClass shippingSizeClass, int quantity) {
     }
 
     /** The address, flattened, before anything is written. */

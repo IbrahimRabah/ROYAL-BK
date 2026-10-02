@@ -1,7 +1,10 @@
 package com.velora.api.shipping.domain;
 
 import jakarta.persistence.Column;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -19,9 +22,12 @@ import lombok.Setter;
 /**
  * What a zone costs to ship to.
  *
- * <p>Currently flat: 70 EGP for Cairo and Lower Egypt, 100 for Upper Egypt. The
- * weight and free-threshold fields are configured but inactive — turning either on
- * is a data change, not a code change.
+ * <p>One row per (zone, size class): {@link #baseCost} is the cost of shipping ONE
+ * unit of that size to the zone. An order pays the sum over its lines, capped at
+ * {@link ShippingZone#getMaxShippingCost()}.
+ *
+ * <p>{@code maxWeightGrams}, {@code costPerExtraKg} and {@code freeShippingOver} are
+ * no longer read by the calculation; the columns remain in the table.
  */
 @Entity
 @Table(name = "shipping_rate")
@@ -38,17 +44,22 @@ public class ShippingRate {
     @JoinColumn(name = "zone_id", nullable = false)
     private ShippingZone zone;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "size_class", nullable = false, length = 10)
+    private ShippingSizeClass sizeClass;
+
+    /** Cost of ONE unit of {@link #sizeClass} shipped to the zone. */
     @Column(name = "base_cost", nullable = false, precision = 19, scale = 4)
     private BigDecimal baseCost;
 
-    /** Weight included in {@code baseCost}. Null means weight is ignored. */
+    /** Unused — see the class comment. */
     @Column(name = "max_weight_grams")
     private Integer maxWeightGrams;
 
     @Column(name = "cost_per_extra_kg", nullable = false, precision = 19, scale = 4)
     private BigDecimal costPerExtraKg = BigDecimal.ZERO;
 
-    /** Order value above which shipping is free. Null means never free. */
+    /** Unused — see the class comment. */
     @Column(name = "free_shipping_over", precision = 19, scale = 4)
     private BigDecimal freeShippingOver;
 

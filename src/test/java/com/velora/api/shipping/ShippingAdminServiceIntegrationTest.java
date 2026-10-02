@@ -19,9 +19,11 @@ import org.springframework.boot.test.context.SpringBootTest;
  * empty "Alexandria" zone (pre-provisioned by V1 for a future price split — see
  * {@code ShippingZone}'s javadoc) and, separately, as a governorate nested under
  * "Delta" (where V2 actually put it). An admin had no way to tell which price
- * applied. {@code V10__deactivate_orphan_shipping_zones.sql} deactivates the empty
- * ALEXANDRIA and CANAL zones; these tests pin that down so a future zone addition
- * cannot reintroduce it silently.
+ * applied. {@code V10__deactivate_orphan_shipping_zones.sql} hid the empty ALEXANDRIA
+ * and CANAL zones; {@code V12__shipping_rate_by_size_class.sql} then gave them their
+ * own governorates (Alexandria; Port Said, Ismailia, Suez) and re-activated them, with
+ * their own prices. These tests pin the invariant that survives both: every listed
+ * zone covers something, and no governorate sits in two zones.
  */
 @SpringBootTest
 class ShippingAdminServiceIntegrationTest {
@@ -42,7 +44,7 @@ class ShippingAdminServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Alexandria belongs to exactly one zone — Delta, not a standalone Alexandria zone")
+    @DisplayName("Alexandria belongs to exactly one zone — the Alexandria zone, not Delta")
     void alexandriaBelongsToExactlyOneZone() {
         Governorate alexandria = governorateRepository.findByCode("ALX").orElseThrow();
 
@@ -52,7 +54,7 @@ class ShippingAdminServiceIntegrationTest {
                 .toList();
 
         assertThat(zonesContainingAlexandria).hasSize(1);
-        assertThat(zonesContainingAlexandria.get(0).code()).isEqualTo("DELTA");
+        assertThat(zonesContainingAlexandria.get(0).code()).isEqualTo("ALEXANDRIA");
     }
 
     @Test

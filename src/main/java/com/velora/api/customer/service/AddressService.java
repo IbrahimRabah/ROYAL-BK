@@ -156,7 +156,7 @@ public class AddressService {
 
         // Better to refuse here than to let the customer reach checkout and discover
         // we cannot deliver to them.
-        if (rateRepository.findForGovernorate(governorate.getId()).isEmpty()) {
+        if (rateRepository.findAllForGovernorate(governorate.getId()).isEmpty()) {
             throw new BusinessException(ErrorCode.GOVERNORATE_NOT_SERVED,
                     "We do not deliver to %s yet".formatted(governorate.getNameAr()));
         }

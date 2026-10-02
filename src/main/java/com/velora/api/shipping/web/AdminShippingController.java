@@ -1,5 +1,6 @@
 package com.velora.api.shipping.web;
 
+import com.velora.api.shipping.dto.MaxShippingCostRequest;
 import com.velora.api.shipping.dto.ShippingRateRequest;
 import com.velora.api.shipping.dto.ShippingZoneResponse;
 import com.velora.api.shipping.service.ShippingAdminService;
@@ -10,6 +11,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,16 +35,25 @@ public class AdminShippingController {
         return shippingAdminService.listZones();
     }
 
-    @Operation(summary = "Set a zone's rate",
+    @Operation(summary = "Set the price of one size class in a zone",
             description = """
-                    Replaces the zone's existing rate rather than adding a second one, so a
-                    governorate can never match two competing prices.
+                    `baseCost` is the cost of ONE unit of `sizeClass`. Replaces that
+                    (zone, size) price rather than adding a second one, so a governorate
+                    can never match two competing prices.
 
-                    Leave `freeShippingOver` null to never offer free delivery.
-                    Leave `maxWeightGrams` null to ignore weight entirely.
+                    `codFee` and the delivery days describe the whole zone and are
+                    written to all of its size rows.
                     """)
     @PutMapping("/rates")
     public Map<String, Long> saveRate(@Valid @RequestBody ShippingRateRequest request) {
         return Map.of("id", shippingAdminService.saveRate(request));
+    }
+
+    @Operation(summary = "Set or clear a zone's shipping cap",
+            description = "Shipping for one order never exceeds this. Null removes the cap.")
+    @PutMapping("/zones/{zoneId}/max-shipping-cost")
+    public void saveMaxShippingCost(@PathVariable Long zoneId,
+                                    @Valid @RequestBody MaxShippingCostRequest request) {
+        shippingAdminService.saveMaxShippingCost(zoneId, request);
     }
 }

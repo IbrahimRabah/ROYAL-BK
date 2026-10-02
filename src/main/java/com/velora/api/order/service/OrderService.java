@@ -6,6 +6,7 @@ import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.util.PhoneNormalizer;
 import com.velora.api.inventory.service.ReservationService;
 import com.velora.api.invoice.service.InvoiceService;
+import com.velora.api.shipping.service.ShippingBreakdownJson;
 import com.velora.api.order.domain.CustomerOrder;
 import com.velora.api.order.domain.FulfillmentStatus;
 import com.velora.api.order.domain.OrderItem;
@@ -44,17 +45,20 @@ public class OrderService {
     private final OrderStatusMachine statusMachine;
     private final ReservationService reservationService;
     private final InvoiceService invoiceService;
+    private final ShippingBreakdownJson shippingBreakdownJson;
 
     public OrderService(OrderRepository orderRepository,
                         OrderStatusHistoryRepository historyRepository,
                         OrderStatusMachine statusMachine,
                         ReservationService reservationService,
-                        InvoiceService invoiceService) {
+                        InvoiceService invoiceService,
+                        ShippingBreakdownJson shippingBreakdownJson) {
         this.orderRepository = orderRepository;
         this.historyRepository = historyRepository;
         this.statusMachine = statusMachine;
         this.reservationService = reservationService;
         this.invoiceService = invoiceService;
+        this.shippingBreakdownJson = shippingBreakdownJson;
     }
 
     // ------------------------------------------------------------- customer view
@@ -350,6 +354,9 @@ public class OrderService {
                 order.getSubtotalGross(),
                 order.getDiscountTotal(),
                 order.getShippingCost(),
+                Boolean.TRUE.equals(order.getShippingCapApplied()),
+                order.getShippingUncappedCost(),
+                shippingBreakdownJson.fromJson(order.getShippingBreakdown()),
                 order.getCodFee(),
                 order.getGrandTotal(),
                 order.getTaxTotal(),

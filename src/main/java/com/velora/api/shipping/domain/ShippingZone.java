@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -40,6 +41,13 @@ public class ShippingZone {
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
+
+    /**
+     * Ceiling on the shipping charge for an order to this zone. When the per-unit
+     * total is higher, this is charged instead. Null means no ceiling.
+     */
+    @Column(name = "max_shipping_cost", precision = 19, scale = 4)
+    private BigDecimal maxShippingCost;
 
     public String nameFor(String locale) {
         return "en".equalsIgnoreCase(locale) ? nameEn : nameAr;

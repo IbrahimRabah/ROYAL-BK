@@ -9,6 +9,7 @@ import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductStatus;
 import com.velora.api.catalog.domain.ProductVariant;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.catalog.domain.VariantStatus;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.catalog.repository.ProductRepository;
@@ -134,6 +135,7 @@ class PurchaseJourneyIntegrationTest {
             product.setSlug("journey-product-" + unique);
             // Must be ACTIVE: the cart refuses anything that is not for sale.
             product.setStatus(ProductStatus.ACTIVE);
+            product.setShippingSizeClass(ShippingSizeClass.MEDIUM);
             productId = productRepository.save(product).getId();
 
             ProductVariant variant = new ProductVariant();

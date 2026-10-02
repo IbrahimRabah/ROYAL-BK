@@ -151,6 +151,22 @@ public class CustomerOrder {
     @Column(name = "shipping_zone_name", length = 100)
     private String shippingZoneName;
 
+    /**
+     * How {@code shippingCost} was built: JSON array of
+     * {@code {sizeClass, quantity, unitCost, lineCost}}. Null on orders placed before
+     * shipping was priced per size class — those only have the final figure.
+     */
+    @Column(name = "shipping_breakdown", length = 500)
+    private String shippingBreakdown;
+
+    /** Null on orders placed before the cap existed; read that as "not applied". */
+    @Column(name = "shipping_cap_applied")
+    private Boolean shippingCapApplied;
+
+    /** What shipping would have cost without the cap. Null on older orders. */
+    @Column(name = "shipping_uncapped_cost", precision = 19, scale = 4)
+    private BigDecimal shippingUncappedCost;
+
     @Column(name = "delivery_days_min")
     private Short deliveryDaysMin;
 

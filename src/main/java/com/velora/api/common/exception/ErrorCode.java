@@ -112,6 +112,8 @@ public enum ErrorCode {
 
     // ---- shipping ----
     GOVERNORATE_NOT_SERVED("We do not deliver to this governorate yet", HttpStatus.CONFLICT),
+    SHIPPING_SIZE_MISSING("An item in the cart has no shipping size, so delivery cannot be "
+            + "priced", HttpStatus.CONFLICT),
     SHIPPING_RATE_NOT_CONFIGURED("Shipping is not configured for this area",
             HttpStatus.CONFLICT),
     INVALID_ADDRESS("The delivery address is incomplete", HttpStatus.BAD_REQUEST),

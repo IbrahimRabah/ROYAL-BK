@@ -2,6 +2,7 @@ package com.velora.api.shipping.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * What shipping costs and when it arrives.
@@ -15,22 +16,31 @@ public record ShippingQuoteResponse(
         String governorateName,
         String zoneName,
 
-        @Schema(example = "70.00", description = "What the customer pays for delivery")
+        @Schema(example = "1500.00", description = "What the customer pays for delivery, "
+                + "after the zone cap")
         BigDecimal shippingCost,
 
-        @Schema(description = "The rate before any free-shipping discount")
-        BigDecimal baseCost,
+        @Schema(description = "True when the per-unit total exceeded the zone's cap and "
+                + "the cap was charged instead")
+        boolean shippingCapApplied,
+
+        @Schema(example = "2950.00", description = "The per-unit total before the cap. "
+                + "Equals shippingCost when the cap did not apply.")
+        BigDecimal uncappedCost,
+
+        @Schema(description = "How the cost was built, largest size first")
+        List<ShippingBreakdownLine> breakdown,
 
         @Schema(description = "Extra charge for cash collection. Zero today.")
         BigDecimal codFee,
 
-        @Schema(description = "True when the order value earned free delivery")
+        @Schema(description = "True when shippingCost is zero (e.g. Greater Cairo)")
         boolean freeShippingApplied,
 
-        @Schema(description = "Spend this much for free delivery. Null when not offered.")
+        @Schema(description = "No longer offered — always null")
         BigDecimal freeShippingThreshold,
 
-        @Schema(description = "How much more to spend to reach it. Null when not offered.")
+        @Schema(description = "No longer offered — always null")
         BigDecimal amountToFreeShipping,
 
         int deliveryDaysMin,
@@ -39,7 +49,7 @@ public record ShippingQuoteResponse(
         @Schema(description = "Cart total used in the calculation")
         BigDecimal orderSubtotal,
 
-        @Schema(description = "Cart weight in grams, for weight-based rates")
+        @Schema(description = "Cart weight in grams. Informational — it does not affect the price")
         int totalWeightGrams,
 
         @Schema(description = "subtotal + shipping + COD fee")
