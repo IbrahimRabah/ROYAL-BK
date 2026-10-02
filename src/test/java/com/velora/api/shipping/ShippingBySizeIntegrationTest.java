@@ -74,11 +74,13 @@ class ShippingBySizeIntegrationTest {
 
     private Long categoryId;
     private String guestToken;
+    private Long auditBaseline;
     private final List<Long> productIds = new ArrayList<>();
     private final List<Long> variantIds = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
+        auditBaseline = jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM audit_log", Long.class);
         guestToken = GUEST_TOKEN_PREFIX + UUID.randomUUID();
         Category category = new Category();
         category.setSlug("ship-size-cat-" + UUID.randomUUID().toString().substring(0, 8));
@@ -88,6 +90,9 @@ class ShippingBySizeIntegrationTest {
 
     @AfterEach
     void removeTestData() {
+        // The admin calls these tests make are audited; do not leave their entries behind.
+        jdbc.update("DELETE FROM audit_log WHERE id > ? AND entity_type IN "
+                + "('GOVERNORATE', 'SHIPPING_RATE', 'SHIPPING_ZONE')", auditBaseline);
         String orderFilter = "SELECT id FROM customer_order WHERE contact_phone = '" + PHONE_E164 + "'";
         jdbc.update("DELETE FROM order_status_history WHERE order_id IN (" + orderFilter + ")");
         jdbc.update("DELETE FROM order_item WHERE order_id IN (" + orderFilter + ")");
@@ -227,7 +232,7 @@ class ShippingBySizeIntegrationTest {
 
         BigDecimal original = rateOf("UPPER_EGYPT", ShippingSizeClass.SMALL);
         try {
-            shippingAdminService.saveRate(new ShippingRateRequest(
+            saveRate(new ShippingRateRequest(
                     zoneId("UPPER_EGYPT"), ShippingSizeClass.SMALL,
                     new BigDecimal("999.00"), null, null, null));
 
@@ -236,7 +241,7 @@ class ShippingBySizeIntegrationTest {
             assertThat(response.shippingBreakdown().get(0).unitCost())
                     .isEqualByComparingTo("150.00");
         } finally {
-            shippingAdminService.saveRate(new ShippingRateRequest(
+            saveRate(new ShippingRateRequest(
                     zoneId("UPPER_EGYPT"), ShippingSizeClass.SMALL, original, null, null, null));
         }
     }
@@ -285,7 +290,7 @@ class ShippingBySizeIntegrationTest {
     void adminSetsOneSizeRate() {
         BigDecimal original = rateOf("DELTA", ShippingSizeClass.MEDIUM);
         try {
-            shippingAdminService.saveRate(new ShippingRateRequest(
+            saveRate(new ShippingRateRequest(
                     zoneId("DELTA"), ShippingSizeClass.MEDIUM,
                     new BigDecimal("210.00"), null, null, null));
 
@@ -295,7 +300,7 @@ class ShippingBySizeIntegrationTest {
             assertThat(unitCost(delta, ShippingSizeClass.LARGE)).isEqualByComparingTo("400.00");
             assertThat(delta.rates()).hasSize(3);
         } finally {
-            shippingAdminService.saveRate(new ShippingRateRequest(
+            saveRate(new ShippingRateRequest(
                     zoneId("DELTA"), ShippingSizeClass.MEDIUM, original, null, null, null));
         }
     }
@@ -306,7 +311,7 @@ class ShippingBySizeIntegrationTest {
         Long zoneId = zoneId("DELTA");
         BigDecimal original = zone("DELTA").maxShippingCost();
         try {
-            shippingAdminService.saveMaxShippingCost(zoneId,
+            saveMaxShippingCost(zoneId,
                     new MaxShippingCostRequest(new BigDecimal("300.00")));
             assertThat(zone("DELTA").maxShippingCost()).isEqualByComparingTo("300.00");
 
@@ -315,11 +320,11 @@ class ShippingBySizeIntegrationTest {
             assertThat(capped.shippingCost()).isEqualByComparingTo("300.00");
             assertThat(capped.uncappedCost()).isEqualByComparingTo("800.00");
 
-            shippingAdminService.saveMaxShippingCost(zoneId, new MaxShippingCostRequest(null));
+            saveMaxShippingCost(zoneId, new MaxShippingCostRequest(null));
             assertThat(zone("DELTA").maxShippingCost()).isNull();
             assertThat(quote("DAK").shippingCost()).isEqualByComparingTo("800.00");
         } finally {
-            shippingAdminService.saveMaxShippingCost(zoneId, new MaxShippingCostRequest(original));
+            saveMaxShippingCost(zoneId, new MaxShippingCostRequest(original));
         }
     }
 
@@ -402,5 +407,16 @@ class ShippingBySizeIntegrationTest {
                 .filter(r -> r.sizeClass() == size)
                 .map(SizeRateResponse::unitCost)
                 .findFirst().orElseThrow();
+    }
+
+    // The admin service takes the acting staff member for the audit log; these tests are
+    // about pricing, not attribution, so they act as "system". Attribution is covered in
+    // ShippingAuditIntegrationTest.
+    private void saveRate(ShippingRateRequest request) {
+        shippingAdminService.saveRate(request, null);
+    }
+
+    private void saveMaxShippingCost(Long zoneId, MaxShippingCostRequest request) {
+        shippingAdminService.saveMaxShippingCost(zoneId, request, null);
     }
 }

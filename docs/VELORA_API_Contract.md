@@ -2109,7 +2109,18 @@ Base path: `/api/v1/admin/dashboard`
 ## Audit Log
 Base path: `/api/v1/admin/audit`
 
-Records staff-initiated changes (price edits, stock adjustments, publish/archive, shipping-rate changes, invoice cancellations, payment adjustments, permission changes, store-profile changes). Order status/fulfilment history is **not** here — it lives on the order's own timeline.
+Records staff-initiated changes (price edits, stock adjustments, publish/archive, shipping price and cap changes, opening/closing governorates, invoice cancellations, payment adjustments, permission changes, store-profile changes). Order status/fulfilment history is **not** here — it lives on the order's own timeline.
+
+**Shipping events.** These are commercial decisions — they change what customers pay and which orders can be accepted at all — so each one answers "who did this, and what was it before?". Entries are written only when something actually changed: repeating a call, or closing a governorate that is already closed, records nothing, and a refused call records nothing. `oldValue`/`newValue` hold the before and after.
+
+| `action` | Caused by | `entityType` / `entityLabel` | `oldValue` → `newValue` |
+|---|---|---|---|
+| `GOVERNORATE_SERVICE_CHANGED` | `PUT` / `DELETE /admin/shipping/governorates/{id}/zone` | `GOVERNORATE` / `Aswan (ASW)` | zone code or `CLOSED`, e.g. `CLOSED` → `UPPER_EGYPT` (opened), `UPPER_EGYPT` → `CLOSED` (closed), `CANAL` → `DELTA` (moved) |
+| `SHIPPING_RATE_CHANGED` | `PUT /admin/shipping/rates`, price changed | `SHIPPING_RATE` / `DELTA / MEDIUM` | unit cost, e.g. `200.0000` → `210.0000` (`oldValue` is empty for a size priced for the first time) |
+| `SHIPPING_RATE_CHANGED` | `PUT /admin/shipping/rates`, COD fee or delivery days changed (they apply to the whole zone) | `SHIPPING_ZONE` / `DELTA terms` | `codFee=0.0000, deliveryDays=2-4` → `codFee=5.0000, deliveryDays=3-6` |
+| `SHIPPING_RATE_CHANGED` | `PUT /admin/shipping/zones/{id}/max-shipping-cost` | `SHIPPING_ZONE` / `DELTA cap` | cap, or `none` when there is no cap, e.g. `1500.0000` → `none` |
+
+Amounts are stored to four decimals. `entityId` is the governorate id, the rate id, or the zone id respectively, so `GET /api/v1/admin/audit/GOVERNORATE/{governorateId}` returns everything that ever happened to one governorate — "who closed Aswan?". `actorName` is the staff member's name at the time. Filter all governorate events with `GET /api/v1/admin/audit?action=GOVERNORATE_SERVICE_CHANGED`.
 
 ### `GET /api/v1/admin/audit`
 **Summary:** Paginated audit entries, newest first; optionally filter by action or actor.

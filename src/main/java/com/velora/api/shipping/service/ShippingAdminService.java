@@ -3,6 +3,8 @@ package com.velora.api.shipping.service;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.util.MoneyUtils;
+import com.velora.api.audit.domain.AuditAction;
+import com.velora.api.audit.service.AuditService;
 import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.shipping.domain.Governorate;
 import com.velora.api.shipping.domain.ShippingRate;
@@ -35,19 +37,25 @@ public class ShippingAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(ShippingAdminService.class);
 
+    /** What the audit log shows as the zone of a governorate that is in none. */
+    private static final String CLOSED = "CLOSED";
+
     private final ShippingZoneRepository zoneRepository;
     private final ShippingRateRepository rateRepository;
     private final GovernorateRepository governorateRepository;
     private final ShippingZoneGovernorateRepository zoneGovernorateRepository;
+    private final AuditService auditService;
 
     public ShippingAdminService(ShippingZoneRepository zoneRepository,
                                 ShippingRateRepository rateRepository,
                                 GovernorateRepository governorateRepository,
-                                ShippingZoneGovernorateRepository zoneGovernorateRepository) {
+                                ShippingZoneGovernorateRepository zoneGovernorateRepository,
+                                AuditService auditService) {
         this.zoneRepository = zoneRepository;
         this.rateRepository = rateRepository;
         this.governorateRepository = governorateRepository;
         this.zoneGovernorateRepository = zoneGovernorateRepository;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -97,7 +105,7 @@ public class ShippingAdminService {
      * to every size row of it — {@link ZoneRates} reads them from any one.
      */
     @Transactional
-    public Long saveRate(ShippingRateRequest request) {
+    public Long saveRate(ShippingRateRequest request, Long actorId) {
         ShippingZone zone = loadZone(request.zoneId());
 
         if (request.deliveryDaysMin() != null && request.deliveryDaysMax() != null
@@ -125,6 +133,7 @@ public class ShippingAdminService {
                 });
 
         BigDecimal previous = rate.getBaseCost();
+        String termsBefore = zoneRows.isEmpty() ? null : termsOf(zoneRows.get(0));
         rate.setBaseCost(request.baseCost());
         rate.setActive(true);
         ShippingRate saved = rateRepository.save(rate);
@@ -150,18 +159,55 @@ public class ShippingAdminService {
         log.info("Shipping rate for zone {} size {} changed from {} to {}",
                 zone.getCode(), request.sizeClass(), previous, saved.getBaseCost());
 
+        // Audited only when something actually moved, like PRICE_CHANGED: a log full of
+        // no-op entries is one nobody reads.
+        String label = zone.getCode() + " / " + request.sizeClass();
+        if (previous == null || previous.compareTo(saved.getBaseCost()) != 0) {
+            auditService.recordChange(AuditAction.SHIPPING_RATE_CHANGED, "SHIPPING_RATE",
+                    saved.getId(), label,
+                    previous == null ? null : MoneyUtils.round(previous),
+                    MoneyUtils.round(saved.getBaseCost()), actorId);
+        }
+        String termsAfter = termsOf(allRows.get(0));
+        if (termsBefore != null && !termsBefore.equals(termsAfter)) {
+            auditService.recordChange(AuditAction.SHIPPING_RATE_CHANGED, "SHIPPING_ZONE",
+                    zone.getId(), zone.getCode() + " terms", termsBefore, termsAfter, actorId);
+        }
+
         return saved.getId();
     }
 
     /** Sets or clears the zone's shipping cap. */
     @Transactional
-    public void saveMaxShippingCost(Long zoneId, MaxShippingCostRequest request) {
+    public void saveMaxShippingCost(Long zoneId, MaxShippingCostRequest request,
+                                    Long actorId) {
         ShippingZone zone = loadZone(zoneId);
         BigDecimal previous = zone.getMaxShippingCost();
         zone.setMaxShippingCost(request.maxShippingCost());
         zoneRepository.save(zone);
         log.info("Shipping cap for zone {} changed from {} to {}",
                 zone.getCode(), previous, request.maxShippingCost());
+
+        if (!sameAmount(previous, request.maxShippingCost())) {
+            // "none" rather than null: an empty value reads as "not recorded", and
+            // removing the cap is exactly the change someone will ask about.
+            auditService.recordChange(AuditAction.SHIPPING_RATE_CHANGED, "SHIPPING_ZONE",
+                    zone.getId(), zone.getCode() + " cap",
+                    previous == null ? "none" : MoneyUtils.round(previous),
+                    request.maxShippingCost() == null
+                            ? "none" : MoneyUtils.round(request.maxShippingCost()),
+                    actorId);
+        }
+    }
+
+    private static boolean sameAmount(BigDecimal a, BigDecimal b) {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
+    private static String termsOf(ShippingRate row) {
+        return "codFee=%s, deliveryDays=%d-%d".formatted(
+                MoneyUtils.round(row.getCodFee()), row.getDeliveryDaysMin(),
+                row.getDeliveryDaysMax());
     }
 
     // ------------------------------------------------------------ governorates
@@ -202,7 +248,7 @@ public class ShippingAdminService {
      * exactly the half-open state this feature exists to prevent.
      */
     @Transactional
-    public void assignGovernorate(Long governorateId, Long zoneId) {
+    public void assignGovernorate(Long governorateId, Long zoneId, Long actorId) {
         Governorate governorate = loadGovernorate(governorateId);
         ShippingZone zone = loadZone(zoneId);
         if (!zone.isActive()) {
@@ -227,6 +273,17 @@ public class ShippingAdminService {
 
         log.info("Governorate {} assigned to zone {} (was {})",
                 governorate.getCode(), zone.getCode(), previousZoneId);
+
+        // Assigning it to the zone it already had changes nothing, so records nothing.
+        if (!zone.getId().equals(previousZoneId)) {
+            String before = previousZoneId == null
+                    ? CLOSED
+                    : zoneRepository.findById(previousZoneId)
+                            .map(ShippingZone::getCode).orElse("zone#" + previousZoneId);
+            auditService.recordChange(AuditAction.GOVERNORATE_SERVICE_CHANGED, "GOVERNORATE",
+                    governorate.getId(), governorateLabel(governorate),
+                    before, zone.getCode(), actorId);
+        }
     }
 
     /**
@@ -234,11 +291,26 @@ public class ShippingAdminService {
      * governorate itself stays active and listed (as {@code served: false}). Idempotent.
      */
     @Transactional
-    public void closeGovernorate(Long governorateId) {
+    public void closeGovernorate(Long governorateId, Long actorId) {
         Governorate governorate = loadGovernorate(governorateId);
+        Long previousZoneId = zoneGovernorateRepository
+                .findZoneIdByGovernorateId(governorate.getId()).orElse(null);
         int removed = zoneGovernorateRepository.deleteByGovernorateId(governorate.getId());
         log.info("Governorate {} closed for delivery (was in a zone: {})",
                 governorate.getCode(), removed > 0);
+
+        // Closing one that is already closed changes nothing, so records nothing.
+        if (previousZoneId != null) {
+            String before = zoneRepository.findById(previousZoneId)
+                    .map(ShippingZone::getCode).orElse("zone#" + previousZoneId);
+            auditService.recordChange(AuditAction.GOVERNORATE_SERVICE_CHANGED, "GOVERNORATE",
+                    governorate.getId(), governorateLabel(governorate),
+                    before, CLOSED, actorId);
+        }
+    }
+
+    private static String governorateLabel(Governorate governorate) {
+        return governorate.getNameEn() + " (" + governorate.getCode() + ")";
     }
 
     private Governorate loadGovernorate(Long governorateId) {

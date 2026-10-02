@@ -21,8 +21,18 @@ public enum AuditAction {
     PRODUCT_PUBLISHED,
     PRODUCT_ARCHIVED,
 
-    /** Shipping rates changed — affects what every future customer pays. */
+    /**
+     * A shipping price, zone cap, or zone-wide terms (COD fee, delivery days) changed —
+     * affects what every future customer pays.
+     */
     SHIPPING_RATE_CHANGED,
+
+    /**
+     * A governorate was opened for delivery, closed, or moved to another zone. Changes
+     * which orders the company can accept at all. oldValue / newValue are zone codes, or
+     * CLOSED for a governorate that is in no zone.
+     */
+    GOVERNORATE_SERVICE_CHANGED,
 
     /** An invoice was voided. Always needs a reason. */
     INVOICE_CANCELLED,

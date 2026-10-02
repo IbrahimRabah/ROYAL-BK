@@ -1,5 +1,6 @@
 package com.velora.api.shipping.web;
 
+import com.velora.api.identity.security.UserPrincipal;
 import com.velora.api.shipping.dto.AdminGovernorateResponse;
 import com.velora.api.shipping.dto.AssignZoneRequest;
 import com.velora.api.shipping.dto.MaxShippingCostRequest;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,8 +50,9 @@ public class AdminShippingController {
                     written to all of its size rows.
                     """)
     @PutMapping("/rates")
-    public Map<String, Long> saveRate(@Valid @RequestBody ShippingRateRequest request) {
-        return Map.of("id", shippingAdminService.saveRate(request));
+    public Map<String, Long> saveRate(@Valid @RequestBody ShippingRateRequest request,
+                                    @AuthenticationPrincipal UserPrincipal principal) {
+        return Map.of("id", shippingAdminService.saveRate(request, principal.id()));
     }
 
     @Operation(summary = "List every governorate, served or closed",
@@ -72,8 +75,9 @@ public class AdminShippingController {
                     """)
     @PutMapping("/governorates/{governorateId}/zone")
     public void assignGovernorate(@PathVariable Long governorateId,
-                                  @Valid @RequestBody AssignZoneRequest request) {
-        shippingAdminService.assignGovernorate(governorateId, request.zoneId());
+                                  @Valid @RequestBody AssignZoneRequest request,
+                                  @AuthenticationPrincipal UserPrincipal principal) {
+        shippingAdminService.assignGovernorate(governorateId, request.zoneId(), principal.id());
     }
 
     @Operation(summary = "Close a governorate for delivery",
@@ -83,15 +87,17 @@ public class AdminShippingController {
                     GOVERNORATE_NOT_SERVED. Idempotent. Reopen it with the PUT above.
                     """)
     @DeleteMapping("/governorates/{governorateId}/zone")
-    public void closeGovernorate(@PathVariable Long governorateId) {
-        shippingAdminService.closeGovernorate(governorateId);
+    public void closeGovernorate(@PathVariable Long governorateId,
+                                 @AuthenticationPrincipal UserPrincipal principal) {
+        shippingAdminService.closeGovernorate(governorateId, principal.id());
     }
 
     @Operation(summary = "Set or clear a zone's shipping cap",
             description = "Shipping for one order never exceeds this. Null removes the cap.")
     @PutMapping("/zones/{zoneId}/max-shipping-cost")
     public void saveMaxShippingCost(@PathVariable Long zoneId,
-                                    @Valid @RequestBody MaxShippingCostRequest request) {
-        shippingAdminService.saveMaxShippingCost(zoneId, request);
+                                    @Valid @RequestBody MaxShippingCostRequest request,
+                                    @AuthenticationPrincipal UserPrincipal principal) {
+        shippingAdminService.saveMaxShippingCost(zoneId, request, principal.id());
     }
 }

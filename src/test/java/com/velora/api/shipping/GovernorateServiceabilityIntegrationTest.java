@@ -2,6 +2,7 @@ package com.velora.api.shipping;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -29,6 +30,7 @@ import com.velora.api.inventory.domain.Inventory;
 import com.velora.api.inventory.repository.InventoryRepository;
 import com.velora.api.order.dto.PlaceOrderRequest;
 import com.velora.api.order.service.CheckoutService;
+import com.velora.api.identity.security.UserPrincipal;
 import com.velora.api.shipping.dto.AdminGovernorateResponse;
 import com.velora.api.shipping.dto.GovernorateResponse;
 import com.velora.api.shipping.dto.ShippingQuoteResponse;
@@ -46,7 +48,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -89,9 +93,11 @@ class GovernorateServiceabilityIntegrationTest {
     private Long variantId;
     private Long userId;
     private String guestToken;
+    private Long auditBaseline;
 
     @BeforeEach
     void setUp() {
+        auditBaseline = jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM audit_log", Long.class);
         mvc = MockMvcBuilders.webAppContextSetup(context)
                 .apply(SecurityMockMvcConfigurers.springSecurity())
                 .build();
@@ -139,6 +145,9 @@ class GovernorateServiceabilityIntegrationTest {
 
     @AfterEach
     void removeTestData() {
+        // The admin calls these tests make are audited; do not leave their entries behind.
+        jdbc.update("DELETE FROM audit_log WHERE id > ? AND entity_type IN "
+                + "('GOVERNORATE', 'SHIPPING_RATE', 'SHIPPING_ZONE')", auditBaseline);
         String orderFilter = "SELECT id FROM customer_order WHERE contact_phone = '" + PHONE_E164 + "'";
         jdbc.update("DELETE FROM order_status_history WHERE order_id IN (" + orderFilter + ")");
         jdbc.update("DELETE FROM order_item WHERE order_id IN (" + orderFilter + ")");
@@ -232,7 +241,7 @@ class GovernorateServiceabilityIntegrationTest {
         cartService.addItem(userId, null, new AddToCartRequest(variantId, 1), "ar");
 
         try {
-            shippingAdminService.closeGovernorate(daqahliya);
+            closeGovernorate(daqahliya);
 
             assertThatThrownBy(() -> checkoutService.placeOrder(userId, null,
                     new PlaceOrderRequest(saved.id(), null, "COD", null), "ar"))
@@ -241,7 +250,7 @@ class GovernorateServiceabilityIntegrationTest {
             assertThat(inventoryRepository.findByVariantId(variantId).orElseThrow()
                     .getQtyReserved()).isZero();
         } finally {
-            shippingAdminService.assignGovernorate(daqahliya, originalZone);
+            assignGovernorate(daqahliya, originalZone);
         }
     }
 
@@ -286,7 +295,7 @@ class GovernorateServiceabilityIntegrationTest {
         Long upperEgypt = zoneIdOf("UPPER_EGYPT");
 
         try {
-            shippingAdminService.assignGovernorate(aswan, upperEgypt);
+            assignGovernorate(aswan, upperEgypt);
 
             ShippingQuoteResponse quote = shippingService.quote(
                     aswan, null, guestToken, null, true, "ar");
@@ -301,7 +310,7 @@ class GovernorateServiceabilityIntegrationTest {
             assertThat(checkoutService.placeOrder(null, guestToken, inlineOrder(aswan), "ar")
                     .getShippingCost()).isEqualByComparingTo("300.00");
         } finally {
-            shippingAdminService.closeGovernorate(aswan);
+            closeGovernorate(aswan);
         }
         assertThat(adminView("ASW").served()).as("restored to closed").isFalse();
     }
@@ -310,8 +319,8 @@ class GovernorateServiceabilityIntegrationTest {
     @DisplayName("Closing is idempotent, and moving a governorate between zones changes its price")
     void closeTwiceAndMove() {
         Long aswan = idOf("ASW");
-        shippingAdminService.closeGovernorate(aswan);
-        shippingAdminService.closeGovernorate(aswan);
+        closeGovernorate(aswan);
+        closeGovernorate(aswan);
         assertThat(adminView("ASW").zoneId()).isNull();
 
         Long delta = idOfZone("DELTA");
@@ -320,12 +329,12 @@ class GovernorateServiceabilityIntegrationTest {
         cartService.addItem(null, guestToken, new AddToCartRequest(variantId, 1), "ar");
         try {
             assertThat(quoteCost(portSaid)).isEqualByComparingTo("120.00");     // CANAL, SMALL
-            shippingAdminService.assignGovernorate(portSaid, delta);
+            assignGovernorate(portSaid, delta);
             assertThat(quoteCost(portSaid)).isEqualByComparingTo("100.00");     // DELTA, SMALL
-            shippingAdminService.assignGovernorate(portSaid, delta);            // idempotent
+            assignGovernorate(portSaid, delta);            // idempotent
             assertThat(quoteCost(portSaid)).isEqualByComparingTo("100.00");
         } finally {
-            shippingAdminService.assignGovernorate(portSaid, canal);
+            assignGovernorate(portSaid, canal);
         }
         assertThat(quoteCost(portSaid)).isEqualByComparingTo("120.00");
     }
@@ -337,7 +346,7 @@ class GovernorateServiceabilityIntegrationTest {
                 + "(code, name_ar, name_en, is_active) OUTPUT INSERTED.id "
                 + "VALUES ('TEST_EMPTY', 'test', 'Test empty', 1)", Long.class);
         try {
-            assertThatThrownBy(() -> shippingAdminService.assignGovernorate(idOf("ASW"), emptyZone))
+            assertThatThrownBy(() -> assignGovernorate(idOf("ASW"), emptyZone))
                     .isInstanceOfSatisfying(BusinessException.class, e ->
                             assertThat(e.getErrorCode())
                                     .isEqualTo(ErrorCode.SHIPPING_RATE_NOT_CONFIGURED));
@@ -351,13 +360,13 @@ class GovernorateServiceabilityIntegrationTest {
     @Test
     @DisplayName("An unknown governorate or zone is a 404")
     void unknownIdsAreNotFound() {
-        assertThatThrownBy(() -> shippingAdminService.closeGovernorate(999_999L))
+        assertThatThrownBy(() -> closeGovernorate(999_999L))
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
-        assertThatThrownBy(() -> shippingAdminService.assignGovernorate(999_999L, zoneIdOf("DELTA")))
+        assertThatThrownBy(() -> assignGovernorate(999_999L, zoneIdOf("DELTA")))
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
-        assertThatThrownBy(() -> shippingAdminService.assignGovernorate(idOf("ASW"), 999_999L))
+        assertThatThrownBy(() -> assignGovernorate(idOf("ASW"), 999_999L))
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
     }
@@ -395,15 +404,15 @@ class GovernorateServiceabilityIntegrationTest {
 
         try {
             mvc.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(body)
-                            .with(user("admin").roles("ADMIN")))
+                            .with(admin(userId)))
                     .andExpect(status().isOk());
             assertThat(adminView("LUX").served()).isTrue();
 
-            mvc.perform(delete(path).with(user("admin").roles("ADMIN")))
+            mvc.perform(delete(path).with(admin(userId)))
                     .andExpect(status().isOk());
             assertThat(adminView("LUX").served()).isFalse();
         } finally {
-            shippingAdminService.closeGovernorate(luxor);
+            closeGovernorate(luxor);
         }
     }
 
@@ -445,5 +454,22 @@ class GovernorateServiceabilityIntegrationTest {
     private AddressRequest addressIn(Long governorateId) {
         return new AddressRequest("HOME", "عميل الاختبار", PHONE_LOCAL, null, governorateId,
                 "منطقة الاختبار", "شارع الاختبار", "1", null, null, null, null);
+    }
+
+    // Acting as "system": these tests are about serviceability, not attribution, which
+    // ShippingAuditIntegrationTest covers.
+    private void assignGovernorate(Long governorateId, Long zoneId) {
+        shippingAdminService.assignGovernorate(governorateId, zoneId, null);
+    }
+
+    private void closeGovernorate(Long governorateId) {
+        shippingAdminService.closeGovernorate(governorateId, null);
+    }
+
+    /** A real UserPrincipal — the controllers read the acting staff member's id from it. */
+    private static RequestPostProcessor admin(Long actorId) {
+        UserPrincipal principal = UserPrincipal.of(actorId, "admin@example.com", null, List.of("ADMIN"));
+        return authentication(new UsernamePasswordAuthenticationToken(
+                principal, null, principal.authorities()));
     }
 }
