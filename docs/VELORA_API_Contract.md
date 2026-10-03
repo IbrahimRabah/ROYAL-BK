@@ -36,8 +36,16 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 | 400 | `INVALID_REQUEST_BODY` | Malformed JSON, or a field has a type the parser can't accept |
 | 400 | `INVALID_PARAMETER` | A query/path parameter has the wrong type or format |
 | 401 | `UNAUTHORIZED` | Missing, malformed, or expired Bearer token on a protected endpoint |
+| 405 | `METHOD_NOT_ALLOWED` | The path exists but not for this HTTP verb (e.g. `GET /auth/me`, which is a `POST`). `detail` lists the supported methods |
 | 403 | `FORBIDDEN` | Authenticated, but lacking the required role |
 | 500 | `INTERNAL_ERROR` | Any unhandled exception |
+
+**Codes defined but not returned today.** These exist in the `ErrorCode` catalog, but no code path raises them yet, so the client should not branch on them. What it gets instead:
+| Code | What you actually get |
+|---|---|
+| `UNSUPPORTED_FILE_TYPE` | Image uploads (product, category, portfolio, custom-request attachments) refuse a wrong or fake type with `400 VALIDATION_FAILED`; the `detail` says why |
+| `RESERVATION_EXPIRED` | Checkout never expires a held reservation: a line that can't be reserved is `409 STOCK_UNAVAILABLE` |
+| `VARIANT_COMBINATION_EXISTS` | The variant generator never errors on a duplicate: `POST /admin/products/{id}/variants` silently skips an existing combination, and `/variants/preview` marks it `alreadyExists: true` with a warning |
 
 **Pagination envelope** — every list endpoint returns `PageResponse<T>`, never a raw array or Spring's native `Page`:
 ```json
