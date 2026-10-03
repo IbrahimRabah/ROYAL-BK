@@ -53,6 +53,12 @@ public enum AuditAction {
      */
     ORDER_DELIVERY_SCHEDULED,
 
+    /**
+     * A portfolio item changed state: published, hidden, archived or restored. oldValue /
+     * newValue are DRAFT, LIVE or ARCHIVED. A call that changes nothing records nothing.
+     */
+    PORTFOLIO_STATUS_CHANGED,
+
     /** An invoice was voided. Always needs a reason. */
     INVOICE_CANCELLED,
 

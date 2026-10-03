@@ -1,6 +1,7 @@
 package com.velora.api.portfolio.web.admin;
 
 import com.velora.api.common.dto.PageResponse;
+import com.velora.api.identity.security.UserPrincipal;
 import com.velora.api.portfolio.dto.admin.PortfolioAdminResponse;
 import com.velora.api.portfolio.dto.admin.PortfolioAdminResponse.PortfolioImageAdminResponse;
 import com.velora.api.portfolio.dto.admin.PortfolioCreateRequest;
@@ -20,6 +21,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -83,23 +85,26 @@ public class AdminPortfolioController {
             description = "Body {published: true|false}. Refused with 409 for an archived item.")
     @PatchMapping("/{id}/publish")
     public PortfolioAdminResponse publish(@PathVariable Long id,
-                                          @Valid @RequestBody PortfolioPublishRequest request) {
-        return service.setPublished(id, request.published());
+                                          @Valid @RequestBody PortfolioPublishRequest request,
+                                          @AuthenticationPrincipal UserPrincipal principal) {
+        return service.setPublished(id, request.published(), principal.id());
     }
 
     @Operation(summary = "Archive",
             description = "Soft delete: hidden everywhere public and forced unpublished. The row "
                     + "and its images are kept. Repeating it is harmless.")
     @DeleteMapping("/{id}")
-    public PortfolioAdminResponse archive(@PathVariable Long id) {
-        return service.archive(id);
+    public PortfolioAdminResponse archive(@PathVariable Long id,
+                                           @AuthenticationPrincipal UserPrincipal principal) {
+        return service.archive(id, principal.id());
     }
 
     @Operation(summary = "Restore from the archive",
             description = "Comes back as an unpublished draft; publish it as a separate step.")
     @PatchMapping("/{id}/restore")
-    public PortfolioAdminResponse restore(@PathVariable Long id) {
-        return service.restore(id);
+    public PortfolioAdminResponse restore(@PathVariable Long id,
+                                           @AuthenticationPrincipal UserPrincipal principal) {
+        return service.restore(id, principal.id());
     }
 
     // -------------------------------------------------------------------- images

@@ -1,5 +1,7 @@
 package com.velora.api.portfolio.service;
 
+import com.velora.api.audit.domain.AuditAction;
+import com.velora.api.audit.service.AuditService;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.dto.PageResponse;
@@ -40,10 +42,12 @@ public class PortfolioAdminService {
     private final PortfolioItemRepository repository;
     private final CategoryRepository categoryRepository;
     private final PortfolioMapper mapper;
+    private final AuditService auditService;
 
     public PortfolioAdminService(PortfolioItemRepository repository,
                                  CategoryRepository categoryRepository,
-                                 PortfolioMapper mapper) {
+                                 PortfolioMapper mapper, AuditService auditService) {
+        this.auditService = auditService;
         this.repository = repository;
         this.categoryRepository = categoryRepository;
         this.mapper = mapper;
@@ -113,41 +117,66 @@ public class PortfolioAdminService {
 
     /** Explicit state, so a repeated call changes nothing. An archived item cannot go live. */
     @Transactional
-    public PortfolioAdminResponse setPublished(Long id, boolean published) {
+    public PortfolioAdminResponse setPublished(Long id, boolean published, Long actorId) {
         PortfolioItem item = load(id);
         if (published && item.isArchived()) {
             throw new BusinessException(ErrorCode.PORTFOLIO_ITEM_ARCHIVED,
                     "Restore this item before publishing it");
         }
+        String before = stateOf(item);
         item.setPublished(published);
+        PortfolioAdminResponse response = mapper.toAdmin(repository.save(item));
         log.info("Portfolio item id={} published={}", id, published);
-        return mapper.toAdmin(repository.save(item));
+        audit(item, before, actorId);
+        return response;
     }
 
     /** Archive, never delete. Images stay in storage. Repeating it changes nothing. */
     @Transactional
-    public PortfolioAdminResponse archive(Long id) {
+    public PortfolioAdminResponse archive(Long id, Long actorId) {
         PortfolioItem item = load(id);
+        String before = stateOf(item);
         if (!item.isArchived()) {
             item.setArchivedAt(OffsetDateTime.now(ZoneOffset.UTC));
             item.setPublished(false);
             log.info("Archived portfolio item id={}", id);
         }
-        return mapper.toAdmin(repository.save(item));
+        PortfolioAdminResponse response = mapper.toAdmin(repository.save(item));
+        audit(item, before, actorId);
+        return response;
     }
 
     /** Back from the archive as an UNPUBLISHED draft: going live again is a deliberate step. */
     @Transactional
-    public PortfolioAdminResponse restore(Long id) {
+    public PortfolioAdminResponse restore(Long id, Long actorId) {
         PortfolioItem item = load(id);
+        String before = stateOf(item);
         if (item.isArchived()) {
             item.setArchivedAt(null);
             log.info("Restored portfolio item id={}", id);
         }
-        return mapper.toAdmin(repository.save(item));
+        PortfolioAdminResponse response = mapper.toAdmin(repository.save(item));
+        audit(item, before, actorId);
+        return response;
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private static String stateOf(PortfolioItem item) {
+        if (item.isArchived()) {
+            return "ARCHIVED";
+        }
+        return item.isPublished() ? "LIVE" : "DRAFT";
+    }
+
+    /** Records a state change; a call that left the state as it was records nothing. */
+    private void audit(PortfolioItem item, String before, Long actorId) {
+        String after = stateOf(item);
+        if (!after.equals(before)) {
+            auditService.recordChange(AuditAction.PORTFOLIO_STATUS_CHANGED, "PORTFOLIO_ITEM",
+                    item.getId(), item.getSlug(), before, after, actorId);
+        }
+    }
 
     private PortfolioItem save(PortfolioItem item) {
         try {

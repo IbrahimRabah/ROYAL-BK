@@ -13,6 +13,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.velora.api.audit.domain.AuditAction;
+import com.velora.api.audit.domain.AuditLog;
+import com.velora.api.audit.repository.AuditLogRepository;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.storage.StorageService;
@@ -28,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
@@ -53,6 +57,7 @@ class PortfolioIntegrationTest {
 
     @Autowired private WebApplicationContext context;
     @Autowired private StorageService storageService;
+    @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private JdbcTemplate jdbc;
 
@@ -75,6 +80,7 @@ class PortfolioIntegrationTest {
 
     @AfterEach
     void removeTestData() {
+        jdbc.update("DELETE FROM audit_log WHERE entity_type = 'PORTFOLIO_ITEM' AND actor_id = 999001");
         jdbc.query("SELECT url FROM portfolio_image WHERE portfolio_item_id IN "
                 + "(SELECT id FROM portfolio_item WHERE slug LIKE ?)",
                 rs -> { imageKeys.add(rs.getString(1)); }, "%" + tag + "%");
@@ -237,6 +243,35 @@ class PortfolioIntegrationTest {
         assertThatThrownBy(() -> jdbc.update(
                 "UPDATE portfolio_item SET published = 1, archived_at = SYSDATETIMEOFFSET() WHERE id = ?", id))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // ================================================================== audit
+
+    @Test
+    @DisplayName("Publishing, hiding, archiving and restoring are audited with who and DRAFT/LIVE/ARCHIVED; no-ops record nothing")
+    void stateChangesAreAudited() throws Exception {
+        long id = create(title(), null);
+        assertThat(audit(id)).as("creating is not a state change").isEmpty();
+
+        setPublished(id, true);
+        setPublished(id, true);                                   // already live: nothing
+        setPublished(id, false);
+        setPublished(id, true);
+        mvc.perform(delete(ADMIN + "/{id}", id).with(admin()));
+        mvc.perform(delete(ADMIN + "/{id}", id).with(admin())); // already archived: nothing
+        setPublished(id, true).andExpect(status().isConflict()); // refused: nothing
+        mvc.perform(patch(ADMIN + "/{id}/restore", id).with(admin()));
+        mvc.perform(patch(ADMIN + "/{id}/restore", id).with(admin())); // not archived: nothing
+
+        List<AuditLog> entries = audit(id);
+        assertThat(entries).extracting(e -> e.getOldValue() + ">" + e.getNewValue())
+                .containsExactly("DRAFT>LIVE", "LIVE>DRAFT", "DRAFT>LIVE", "LIVE>ARCHIVED", "ARCHIVED>DRAFT");
+        assertThat(entries).allSatisfy(e -> {
+            assertThat(e.getAction()).isEqualTo(AuditAction.PORTFOLIO_STATUS_CHANGED);
+            assertThat(e.getEntityType()).isEqualTo("PORTFOLIO_ITEM");
+            assertThat(e.getEntityLabel()).isEqualTo(slugOf(id));
+            assertThat(e.getActorId()).isEqualTo(999_001L);
+        });
     }
 
     // ================================================================== public
@@ -453,6 +488,15 @@ class PortfolioIntegrationTest {
         long id = ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
         itemIds.add(id);
         return id;
+    }
+
+    /** Oldest first. */
+    private List<AuditLog> audit(long id) {
+        List<AuditLog> entries = new ArrayList<>(auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByCreatedAtDesc("PORTFOLIO_ITEM", String.valueOf(id),
+                        PageRequest.of(0, 50)).getContent());
+        java.util.Collections.reverse(entries);
+        return entries;
     }
 
     private String slugOf(long id) {
