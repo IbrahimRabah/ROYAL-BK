@@ -1,16 +1,16 @@
 package com.velora.api.order.service;
 
+import com.velora.api.common.config.BrandingProperties;
 import com.velora.api.order.repository.OrderRepository;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds order numbers of the form {@code VLR-260809-4821}.
+ * Builds order numbers of the form {@code RYL-260809-4821} (prefix from {@code velora.branding}).
  *
  * <p>Date plus four random digits, deliberately NOT a running sequence.
  *
@@ -34,14 +34,15 @@ public class OrderNumberGenerator {
     private final OrderRepository orderRepository;
     private final SecureRandom random = new SecureRandom();
 
-    @Value("${velora.business.order-number-prefix:VLR}")
-    private String prefix;
+    private final BrandingProperties branding;
 
-    public OrderNumberGenerator(OrderRepository orderRepository) {
+    public OrderNumberGenerator(OrderRepository orderRepository, BrandingProperties branding) {
         this.orderRepository = orderRepository;
+        this.branding = branding;
     }
 
     public String generate() {
+        String prefix = branding.getOrderNumberPrefix();
         String datePart = LocalDate.now().format(DATE);
 
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

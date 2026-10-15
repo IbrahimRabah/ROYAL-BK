@@ -257,7 +257,7 @@ class PurchaseJourneyIntegrationTest {
         assertThat(invoice)
                 .as("delivery must produce an invoice with no further action")
                 .isNotNull();
-        assertThat(invoice.getInvoiceNumber()).startsWith("VLR-INV-");
+        assertThat(invoice.getInvoiceNumber()).startsWith("RYL-INV-");
         assertThat(invoice.getSequenceNumber()).isPositive();
 
         // The customer needs this number to build GET /me/invoices/{invoiceNumber}/pdf.

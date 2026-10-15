@@ -461,6 +461,6 @@ class OrderAssemblyFeeIntegrationTest {
                 List.of(), new BigDecimal("1000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
                 new BigDecimal(codFee), new BigDecimal(assembly),
                 new BigDecimal("1500.00"), new BigDecimal("200.00"), new BigDecimal("1700.00"),
-                "الدفع عند الاستلام", "EGP");
+                "الدفع عند الاستلام", "EGP", "بائع");
     }
 }

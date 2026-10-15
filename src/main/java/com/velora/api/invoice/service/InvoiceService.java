@@ -1,5 +1,6 @@
 package com.velora.api.invoice.service;
 
+import com.velora.api.common.config.BrandingProperties;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.storage.StorageService;
@@ -61,6 +62,7 @@ public class InvoiceService {
     private final TemplateRenderer templateRenderer;
     private final PdfRenderer pdfRenderer;
     private final StorageService storageService;
+    private final BrandingProperties branding;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                           InvoiceSequenceRepository sequenceRepository,
@@ -68,7 +70,8 @@ public class InvoiceService {
                           StoreProfileService storeProfileService,
                           TemplateRenderer templateRenderer,
                           PdfRenderer pdfRenderer,
-                          StorageService storageService) {
+                          StorageService storageService,
+                          BrandingProperties branding) {
         this.invoiceRepository = invoiceRepository;
         this.sequenceRepository = sequenceRepository;
         this.orderRepository = orderRepository;
@@ -76,6 +79,7 @@ public class InvoiceService {
         this.templateRenderer = templateRenderer;
         this.pdfRenderer = pdfRenderer;
         this.storageService = storageService;
+        this.branding = branding;
     }
 
     // ------------------------------------------------------------------- issue
@@ -108,7 +112,8 @@ public class InvoiceService {
 
         int year = LocalDate.now().getYear();
         int sequence = allocateNumber(year);
-        String invoiceNumber = "VLR-INV-%d-%06d".formatted(year, sequence);
+        String invoiceNumber = "%s-%d-%06d".formatted(
+                branding.getInvoiceNumberPrefix(), year, sequence);
 
         Invoice invoice = new Invoice();
         invoice.setInvoiceNumber(invoiceNumber);
@@ -351,7 +356,13 @@ private byte[] renderPdf(Invoice invoice) {
                 invoice.getTaxTotal(),
                 invoice.getGrandTotal(),
                 arabicPaymentMethod(invoice.getPaymentMethod()),
-                invoice.getCurrency());
+                invoice.getCurrency(),
+                wordmark(invoice.getSellerName()));
+    }
+
+    /** The store profile's legal name wins; config is only the fallback when it is blank. */
+    private String wordmark(String legalName) {
+        return legalName != null && !legalName.isBlank() ? legalName : branding.getBrandName();
     }
 
     private String arabicPaymentMethod(String method) {

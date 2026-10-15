@@ -126,6 +126,13 @@ velora:
     # they want changed, gets distracted and comes back. The protection is that the
     # token is signed and bound to one request, not that it is short-lived.
     attachment-token-hours: 24
+  branding:
+    # Per-deployment identity (see BrandingProperties). The wordmark on invoices comes
+    # from the store profile's legal name; brand-name is only the fallback.
+    # Prefixes apply to numbers issued from now on; existing numbers are never rewritten.
+    order-number-prefix: RYL
+    invoice-number-prefix: RYL-INV
+    brand-name: ROYAL
   business:
     reservation-ttl-minutes: 20
     default-tax-rate: 0.14

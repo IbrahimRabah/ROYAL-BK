@@ -219,7 +219,7 @@
     <table class="header-table">
         <tr>
             <td>
-                <div class="brand">V E L O R A</div>
+                <div class="brand" th:text="${view.brandName}">ROYAL</div>
                 <div class="seller-line">
                     <span th:text="${view.sellerName}">VELORA</span>
                     <br th:if="${view.sellerAddress != null}"/>

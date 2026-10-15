@@ -38,7 +38,10 @@ public record InvoiceView(
         BigDecimal taxTotal,
         BigDecimal grandTotal,
         String paymentMethod,
-        String currency
+        String currency,
+
+        /** Header wordmark: the seller's legal name, or the configured brand name. */
+        String brandName
 ) {
 
     /**
