@@ -160,7 +160,7 @@ public class OrderService {
         switch (to) {
             case SHIPPED ->
                 // The hold becomes a real reduction. On hand and reserved both drop.
-                    reservationService.commitForOrder(order.getId());
+                    reservationService.commitForOrder(order.getId(), actorId);
             case CANCELLED, RETURNED_TO_SELLER ->
                 // Not yet shipped, or came straight back — return the units.
                     releaseIfStillHeld(order);

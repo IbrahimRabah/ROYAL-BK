@@ -1,11 +1,15 @@
 package com.velora.api.inventory.service;
 
+import com.velora.api.audit.service.AuditService;
 import com.velora.api.catalog.domain.ProductVariant;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
+import com.velora.api.inventory.domain.MovementType;
 import com.velora.api.inventory.domain.ReservationStatus;
 import com.velora.api.inventory.domain.StockReservation;
+import com.velora.api.inventory.domain.StockMovement;
 import com.velora.api.inventory.repository.InventoryRepository;
+import com.velora.api.inventory.repository.StockMovementRepository;
 import com.velora.api.inventory.repository.StockReservationRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -33,14 +37,20 @@ public class ReservationService {
 
     private final InventoryRepository inventoryRepository;
     private final StockReservationRepository reservationRepository;
+    private final StockMovementRepository movementRepository;
+    private final AuditService auditService;
 
     @Value("${velora.business.reservation-ttl-minutes:20}")
     private int reservationTtlMinutes;
 
     public ReservationService(InventoryRepository inventoryRepository,
-                              StockReservationRepository reservationRepository) {
+                              StockReservationRepository reservationRepository,
+                              StockMovementRepository movementRepository,
+                              AuditService auditService) {
         this.inventoryRepository = inventoryRepository;
         this.reservationRepository = reservationRepository;
+        this.movementRepository = movementRepository;
+        this.auditService = auditService;
     }
 
     /**
@@ -149,7 +159,7 @@ public class ReservationService {
      * units were never available to anyone else while held.
      */
     @Transactional
-    public void commitForOrder(Long orderId) {
+    public void commitForOrder(Long orderId, Long actorId) {
         List<StockReservation> holds =
                 reservationRepository.findByOrderIdAndStatus(orderId, ReservationStatus.HELD);
 
@@ -168,6 +178,23 @@ public class ReservationService {
                                 .formatted(hold.getVariant().getSku()));
             }
             hold.setStatus(ReservationStatus.COMMITTED);
+
+            // Every change to qty_on_hand writes its ledger row in the same transaction. The
+            // native UPDATE cleared the persistence context, so this read sees the new number.
+            int onHandAfter = inventoryRepository.findByVariantId(hold.getVariant().getId())
+                    .map(inv -> inv.getQtyOnHand())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INVENTORY_RECORD_MISSING));
+
+            StockMovement movement = new StockMovement();
+            movement.setVariant(hold.getVariant());
+            movement.setMovementType(MovementType.SALE);
+            movement.setQuantityDelta(-hold.getQuantity());
+            movement.setQtyAfter(onHandAfter);
+            movement.setReferenceType("ORDER");
+            movement.setReferenceId(String.valueOf(orderId));
+            movement.setActorId(actorId);
+            movement.setActorName(auditService.resolveActorName(actorId));
+            movementRepository.save(movement);
         }
         reservationRepository.saveAll(holds);
         log.info("Committed {} reservation(s) for order {}", holds.size(), orderId);

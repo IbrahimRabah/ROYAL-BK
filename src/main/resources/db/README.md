@@ -15,6 +15,7 @@
 | `V16__assembly_fee_and_invoice_fees.sql` | Assembly fee: `product.requires_assembly` / `assembly_fee`, `customer_order.assembly_total`, `order_item.assembly_fee`, and `invoice.assembly_total` / `invoice.cod_fee` (existing invoices backfilled from their order). Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it after V15. |
 | `V17__portfolio.sql` | The portfolio: `portfolio_item` (slug unique over archived rows too, `archived_at` soft delete, CHECK that an archived item is never published) and `portfolio_image`. Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it after V16. |
 | `V18__custom_request_completed.sql` | Adds `COMPLETED` to `ck_custom_req_status` (accepted work finished, file closed). Not yet applied to `royal`; `create-test-db.ps1` applies it after V17. |
+| `../db-royal/reset-demo-transactions.sql` | **Demo data only - deletes orders, invoices and custom requests.** Wipes test activity and resets the invoice and custom-request counters; keeps the catalogue, portfolio, shipping, store profile and users. Refuses any database not named `royal`. Take a backup first and stop the app before running. Prints the `custom-requests/` and `invoices/` folders to clean by hand. Not part of the schema history. |
 
 There is no `V1`. The original schema script is gone and was never in this repository; the baseline
 replaces it, and was scripted from a database that already had V2–V14 applied.

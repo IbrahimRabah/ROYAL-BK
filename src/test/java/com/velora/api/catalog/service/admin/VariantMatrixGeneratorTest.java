@@ -20,7 +20,7 @@ class VariantMatrixGeneratorTest {
 
     @BeforeEach
     void setUp() {
-        generator = new VariantMatrixGenerator();
+        generator = new VariantMatrixGenerator(new com.velora.api.common.config.BrandingProperties());
         idSeq = 1;
     }
 
@@ -115,7 +115,7 @@ class VariantMatrixGeneratorTest {
         var result = generator.generate(selection, "classic-gold-watch", Set.of(), "ar");
         String sku = result.combinations().get(0).suggestedSku();
 
-        assertThat(sku).startsWith("VLR-");
+        assertThat(sku).startsWith("RYL-");
         assertThat(sku).contains("GOLD");
         assertThat(sku).matches("[A-Z0-9-]+");
         assertThat(sku.length()).isLessThanOrEqualTo(60);

@@ -275,6 +275,68 @@ class PurchaseJourneyIntegrationTest {
     }
 
     @Test
+    @DisplayName("REGRESSION: shipping reduces on-hand AND writes a SALE movement referencing the order")
+    void shippingWritesASaleMovementReferencingTheOrder() {
+        cartService.addItem(null, guestToken, new AddToCartRequest(variantId, 2), "ar");
+        Long orderId = placeOrder();
+        advance(orderId, FulfillmentStatus.CONFIRMED);
+        advance(orderId, FulfillmentStatus.PROCESSING);
+
+        assertThat(movements()).as("nothing moves before shipment").isEmpty();
+
+        advance(orderId, FulfillmentStatus.SHIPPED);
+
+        assertThat(stock().getQtyOnHand()).isEqualTo(OPENING_STOCK - 2);
+        List<java.util.Map<String, Object>> rows = movements();
+        assertThat(rows).as("qty_on_hand changed, so the ledger must say why").hasSize(1);
+        java.util.Map<String, Object> sale = rows.get(0);
+        assertThat(sale.get("movement_type")).isEqualTo("SALE");
+        assertThat(((Number) sale.get("quantity_delta")).intValue()).isEqualTo(-2);
+        assertThat(((Number) sale.get("qty_after")).intValue()).isEqualTo(OPENING_STOCK - 2);
+        assertThat(sale.get("reference_type")).isEqualTo("ORDER");
+        assertThat(sale.get("reference_id")).isEqualTo(String.valueOf(orderId));
+        assertThat(sale.get("actor_name")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("The demo reset script's stock-restore statement undoes a shipped sale exactly")
+    void resetScriptRestoresStockFromTheSaleMovement() throws Exception {
+        cartService.addItem(null, guestToken, new AddToCartRequest(variantId, 2), "ar");
+        Long orderId = placeOrder();
+        advance(orderId, FulfillmentStatus.CONFIRMED);
+        advance(orderId, FulfillmentStatus.PROCESSING);
+        advance(orderId, FulfillmentStatus.SHIPPED);
+        assertThat(stock().getQtyOnHand()).isEqualTo(OPENING_STOCK - 2);
+
+        // The statement is taken from the script itself, so this fails if the two drift apart.
+        String script = new String(new org.springframework.core.io.ClassPathResource(
+                "db-royal/reset-demo-transactions.sql").getInputStream().readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("UPDATE i\\s+SET.*?m\\.variant_id = i\\.variant_id;",
+                        java.util.regex.Pattern.DOTALL)
+                .matcher(script);
+        assertThat(m.find()).as("restore statement found in the reset script").isTrue();
+        String restore = m.group();
+
+        Integer restored = transactionTemplate.execute(status -> {
+            jdbc.update(restore);
+            Integer onHand = jdbc.queryForObject(
+                    "SELECT qty_on_hand FROM inventory WHERE variant_id = ?", Integer.class, variantId);
+            status.setRollbackOnly();   // the probe must leave nothing behind
+            return onHand;
+        });
+        assertThat(restored).isEqualTo(OPENING_STOCK);
+        assertThat(stock().getQtyOnHand()).as("probe rolled back").isEqualTo(OPENING_STOCK - 2);
+    }
+
+    private List<java.util.Map<String, Object>> movements() {
+        return jdbc.queryForList("SELECT movement_type, quantity_delta, qty_after, reference_type, "
+                + "reference_id, actor_name FROM stock_movement WHERE variant_id = ? ORDER BY id",
+                variantId);
+    }
+
+    @Test
     @DisplayName("REGRESSION: an order's hold survives the TTL — it is not an abandoned cart")
     void orderHoldSurvivesExpiry() {
         cartService.addItem(null, guestToken, new AddToCartRequest(variantId, 2), "ar");

@@ -1,5 +1,6 @@
 package com.velora.api.store.service;
 
+import com.velora.api.common.config.BrandingProperties;
 import com.velora.api.store.domain.StoreProfile;
 import com.velora.api.store.dto.StoreProfileRequest;
 import com.velora.api.store.dto.StoreProfileResponse;
@@ -23,9 +24,11 @@ public class StoreProfileService {
     private static final int PROFILE_ID = 1;
 
     private final StoreProfileRepository repository;
+    private final BrandingProperties branding;
 
-    public StoreProfileService(StoreProfileRepository repository) {
+    public StoreProfileService(StoreProfileRepository repository, BrandingProperties branding) {
         this.repository = repository;
+        this.branding = branding;
     }
 
     /**
@@ -39,7 +42,8 @@ public class StoreProfileService {
                     + "details at PUT /api/v1/admin/settings/store-profile");
             StoreProfile profile = new StoreProfile();
             profile.setId(PROFILE_ID);
-            profile.setLegalName("VELORA");
+            profile.setLegalName(branding.getBrandName());
+            profile.setInvoiceFooterNote("شكراً لتسوقكم من " + branding.getBrandName());
             return repository.save(profile);
         });
     }

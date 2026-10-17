@@ -1,9 +1,11 @@
 package com.velora.api.notification.service;
 
+import com.velora.api.common.config.BrandingProperties;
 import com.velora.api.export.service.TemplateRenderer;
 import com.velora.api.order.domain.CustomerOrder;
 import com.velora.api.order.event.OrderPlacedEvent;
 import com.velora.api.order.repository.OrderRepository;
+import com.velora.api.store.service.StoreProfileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -34,13 +36,19 @@ public class OrderConfirmationListener {
     private final OrderRepository orderRepository;
     private final TemplateRenderer templateRenderer;
     private final MailService mailService;
+    private final StoreProfileService storeProfileService;
+    private final BrandingProperties branding;
 
     public OrderConfirmationListener(OrderRepository orderRepository,
                                      TemplateRenderer templateRenderer,
-                                     MailService mailService) {
+                                     MailService mailService,
+                                     StoreProfileService storeProfileService,
+                                     BrandingProperties branding) {
         this.orderRepository = orderRepository;
         this.templateRenderer = templateRenderer;
         this.mailService = mailService;
+        this.storeProfileService = storeProfileService;
+        this.branding = branding;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -61,7 +69,13 @@ public class OrderConfirmationListener {
             return;
         }
 
-        String html = templateRenderer.render("order-confirmation", "order", order);
+        // The store profile's legal name wins; config is only the fallback when it is blank,
+        // the same rule as the invoice wordmark.
+        String legalName = storeProfileService.require().getLegalName();
+        String brandName = legalName != null && !legalName.isBlank()
+                ? legalName : branding.getBrandName();
+        String html = templateRenderer.render("order-confirmation",
+                java.util.Map.of("order", order, "brandName", brandName));
         String subject = "طلبك رقم %s وصلنا".formatted(order.getOrderNumber());
         mailService.sendHtml(order.getContactEmail(), subject, html);
     }

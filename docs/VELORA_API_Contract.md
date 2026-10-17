@@ -16,7 +16,7 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 **Error shape** — every failure is an RFC 7807 `ProblemDetail`:
 ```json
 {
-  "type": "https://velora.com/errors/stock-unavailable",
+  "type": "/errors/stock-unavailable",
   "title": "Conflict",
   "status": 409,
   "code": "STOCK_UNAVAILABLE",

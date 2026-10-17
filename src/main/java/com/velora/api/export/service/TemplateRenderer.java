@@ -20,6 +20,13 @@ public class TemplateRenderer {
         this.templateEngine = templateEngine;
     }
 
+    /** Several variables at once, for templates that need more than one model object. */
+    public String render(String templateName, java.util.Map<String, Object> variables) {
+        Context context = new Context(new java.util.Locale("ar"));
+        context.setVariables(variables);
+        return templateEngine.process(templateName, context);
+    }
+
     public String render(String templateName, String variableName, Object model) {
         Context context = new Context(new java.util.Locale("ar"));
         context.setVariable(variableName, model);

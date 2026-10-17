@@ -26,6 +26,9 @@ public class BrandingProperties {
     /** Wordmark fallback for when the store profile has no legal name. */
     private String brandName = "ROYAL";
 
+    /** New generated SKUs read {@code <prefix>-<PRODUCT>-<VALUES>}. Stored SKUs are never rewritten. */
+    private String skuPrefix = "RYL";
+
     public String getOrderNumberPrefix() {
         return orderNumberPrefix;
     }
@@ -40,6 +43,14 @@ public class BrandingProperties {
 
     public void setInvoiceNumberPrefix(String invoiceNumberPrefix) {
         this.invoiceNumberPrefix = invoiceNumberPrefix;
+    }
+
+    public String getSkuPrefix() {
+        return skuPrefix;
+    }
+
+    public void setSkuPrefix(String skuPrefix) {
+        this.skuPrefix = skuPrefix;
     }
 
     public String getBrandName() {

@@ -2,6 +2,7 @@ package com.velora.api.catalog.service.admin;
 
 import com.velora.api.catalog.domain.AttributeValue;
 import com.velora.api.catalog.dto.admin.VariantMatrixPreviewResponse;
+import com.velora.api.common.config.BrandingProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +26,12 @@ public class VariantMatrixGenerator {
 
     /** Above this the preview is unusable and the admin has picked the wrong tool. */
     public static final int MAX_COMBINATIONS = 200;
+
+    private final BrandingProperties branding;
+
+    public VariantMatrixGenerator(BrandingProperties branding) {
+        this.branding = branding;
+    }
 
     /**
      * @param valuesByAttribute selected values, keyed by attribute id, in display order
@@ -131,16 +138,16 @@ public class VariantMatrixGenerator {
         return result;
     }
 
-    /** {@code classic-gold-watch} -> {@code VLR-CLASSICGOLD} */
+    /** {@code classic-gold-watch} -> {@code <sku-prefix>-CLASSICGOLD} */
     private String skuPrefix(String productSlug) {
         if (productSlug == null || productSlug.isBlank()) {
-            return "VLR";
+            return branding.getSkuPrefix();
         }
         String compact = productSlug.replaceAll("[^a-zA-Z0-9]", "").toUpperCase(Locale.ENGLISH);
-        return "VLR-" + compact.substring(0, Math.min(10, compact.length()));
+        return branding.getSkuPrefix() + "-" + compact.substring(0, Math.min(10, compact.length()));
     }
 
-    /** {@code VLR-CLASSICGOLD-GOLD-42MM} */
+    /** {@code <sku-prefix>-CLASSICGOLD-GOLD-42MM} */
     private String buildSku(String prefix, List<AttributeValue> combination) {
         StringBuilder sb = new StringBuilder(prefix);
         for (AttributeValue value : combination) {

@@ -30,10 +30,10 @@ public class OpenApiConfig {
     private static final String BEARER_SCHEME = "bearerAuth";
 
     @Bean
-    public OpenAPI veloraOpenAPI() {
+    public OpenAPI veloraOpenAPI(BrandingProperties branding) {
         return new OpenAPI()
                 .info(new Info()
-                        .title("VELORA E-Commerce API")
+                        .title(branding.getBrandName() + " E-Commerce API")
                         .version("v1")
                         .description("""
                                 Premium watches, wallets and perfumes for the Egyptian market.
@@ -44,7 +44,7 @@ public class OpenApiConfig {
                                 - Errors follow RFC 7807 with a stable `code` field
                                 - Guest carts use the `X-Guest-Token` header
                                 """)
-                        .contact(new Contact().name("VELORA")))
+                        .contact(new Contact().name(branding.getBrandName())))
                 .servers(List.of(
                         new Server().url("http://localhost:8081").description("Local development")))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))

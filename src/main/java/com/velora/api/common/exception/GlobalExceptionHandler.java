@@ -35,7 +35,7 @@ import org.springframework.web.servlet.NoHandlerFoundException;
  *
  * <pre>
  * {
- *   "type": "https://velora.com/errors/attribute-code-exists",
+ *   "type": "/errors/attribute-code-exists",
  *   "title": "Conflict",
  *   "status": 409,
  *   "code": "ATTRIBUTE_CODE_EXISTS",
@@ -52,7 +52,7 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-    private static final String ERROR_BASE = "https://velora.com/errors/";
+    private static final String ERROR_BASE = "/errors/";
 
     // ------------------------------------------------------------ business rules
 

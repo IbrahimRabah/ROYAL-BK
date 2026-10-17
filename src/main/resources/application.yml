@@ -133,6 +133,8 @@ velora:
     order-number-prefix: RYL
     invoice-number-prefix: RYL-INV
     brand-name: ROYAL
+    # Prefix for newly generated SKUs only; existing SKUs identify stock and are never rewritten.
+    sku-prefix: RYL
   business:
     reservation-ttl-minutes: 20
     default-tax-rate: 0.14
