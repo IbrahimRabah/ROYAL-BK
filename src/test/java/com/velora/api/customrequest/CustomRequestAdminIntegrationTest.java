@@ -36,6 +36,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
 import static com.velora.api.customrequest.domain.CustomRequestStatus.ACCEPTED;
+import static com.velora.api.customrequest.domain.CustomRequestStatus.COMPLETED;
 import static com.velora.api.customrequest.domain.CustomRequestStatus.CONTACTED;
 import static com.velora.api.customrequest.domain.CustomRequestStatus.CONVERTED;
 import static com.velora.api.customrequest.domain.CustomRequestStatus.NEW;
@@ -170,6 +171,33 @@ class CustomRequestAdminIntegrationTest extends CustomRequestTestBase {
         assertThat(entries(created, AuditAction.CUSTOM_REQUEST_STATUS_CHANGED))
                 .extracting(e -> e.getOldValue() + ">" + e.getNewValue())
                 .containsExactly("QUOTED>ACCEPTED", "CONTACTED>QUOTED", "NEW>CONTACTED");
+    }
+
+    @Test
+    @DisplayName("COMPLETED is reachable only from ACCEPTED, is audited, and is final")
+    void completedOnlyFromAccepted() {
+        CustomRequestCreatedResponse fresh = createAsGuest();
+        CustomRequestCreatedResponse contacted = createAsGuest();
+        adminService.changeStatus(contacted.id(), CONTACTED, null, staffId);
+        CustomRequestCreatedResponse quoted = createAsGuest();
+        adminService.quote(quoted.id(), new BigDecimal("900"), null, staffId);
+        CustomRequestCreatedResponse rejected = createAsGuest();
+        adminService.changeStatus(rejected.id(), REJECTED, "no", staffId);
+        for (CustomRequestCreatedResponse request : List.of(fresh, contacted, quoted, rejected)) {
+            assertInvalid(request, COMPLETED);
+        }
+
+        CustomRequestCreatedResponse accepted = createAsGuest();
+        adminService.quote(accepted.id(), new BigDecimal("900"), null, staffId);
+        adminService.changeStatus(accepted.id(), ACCEPTED, null, staffId);
+        adminService.changeStatus(accepted.id(), COMPLETED, "delivered and installed", staffId);
+
+        assertThat(statusOf(accepted)).isEqualTo(COMPLETED);
+        AuditLog entry = entries(accepted, AuditAction.CUSTOM_REQUEST_STATUS_CHANGED).get(0);
+        assertThat(entry.getOldValue() + ">" + entry.getNewValue()).isEqualTo("ACCEPTED>COMPLETED");
+        for (CustomRequestStatus target : List.of(NEW, CONTACTED, ACCEPTED, REJECTED, COMPLETED)) {
+            assertInvalid(accepted, target);
+        }
     }
 
     @Test

@@ -2158,7 +2158,8 @@ A customer asks for a different size of a ready-made product, a product made to 
 **Statuses**
 
 ```
-NEW ──► CONTACTED ──► QUOTED ──► ACCEPTED ──► CONVERTED   (CONVERTED: not reachable yet)
+NEW ──► CONTACTED ──► QUOTED ──► ACCEPTED ──► COMPLETED   (work done, file closed)
+                                           └──► CONVERTED   (not reachable yet)
   └────────┴───────────┴──► REJECTED
 ```
 
@@ -2167,7 +2168,8 @@ NEW ──► CONTACTED ──► QUOTED ──► ACCEPTED ──► CONVERTED 
 | `NEW` | `CONTACTED`, `REJECTED` | giving a quote makes it `QUOTED` |
 | `CONTACTED` | `REJECTED` | giving a quote makes it `QUOTED` |
 | `QUOTED` | `ACCEPTED`, `REJECTED` | a quote can be revised |
-| `ACCEPTED`, `REJECTED`, `CONVERTED` | nothing — final | |
+| `ACCEPTED` | `COMPLETED` | no other move |
+| `REJECTED`, `CONVERTED`, `COMPLETED` | nothing — final | |
 
 `QUOTED` is only ever reached by quoting, so a quoted request always has a quote, and **`ACCEPTED` is impossible without one**. `CONVERTED` is refused for now; `convertedOrderId` exists and is always `null`.
 
@@ -2258,7 +2260,7 @@ All admin-only. Changes are audited: see *Audit Log*.
 **Query params** (all optional, they compose):
 | Name | Type | Meaning |
 |---|---|---|
-| `status` | enum | `NEW` \| `CONTACTED` \| `QUOTED` \| `ACCEPTED` \| `REJECTED` \| `CONVERTED` |
+| `status` | enum | `NEW` \| `CONTACTED` \| `QUOTED` \| `ACCEPTED` \| `REJECTED` \| `CONVERTED` \| `COMPLETED` |
 | `type` | enum | `SIZE_VARIANT` \| `MADE_TO_ORDER` \| `CUSTOM_WORK` |
 | `governorateId` | long | |
 | `q` | string | A **phone number** in any form (`01012345678`, `+201012345678`, `201012345678`) matches it exactly; any other text matches the contact name or request number, case-insensitively, as a substring. `%` and `_` are plain characters |
@@ -2324,10 +2326,10 @@ An unknown `status` or `type` is `400 VALIDATION_FAILED`.
 | Status | Code | When |
 |---|---|---|
 | 400 | VALIDATION_FAILED | `status` missing; or `REJECTED` without a note |
-| 400 | INVALID_REQUEST_BODY | `status` is not one of the six values |
+| 400 | INVALID_REQUEST_BODY | `status` is not one of the seven values |
 | 404 | CUSTOM_REQUEST_NOT_FOUND | |
 | 409 | CUSTOM_REQUEST_QUOTE_REQUIRED | `ACCEPTED` from `NEW` or `CONTACTED`: quote it first |
-| 409 | INVALID_STATUS_TRANSITION | Anything else the table does not allow: setting `QUOTED` (quote instead), setting `CONVERTED` (not available yet), repeating the current status, or leaving `ACCEPTED` / `REJECTED` / `CONVERTED` |
+| 409 | INVALID_STATUS_TRANSITION | Anything else the table does not allow: setting `QUOTED` (quote instead), setting `CONVERTED` (not available yet), repeating the current status, setting `COMPLETED` from anything but `ACCEPTED`, or leaving `REJECTED` / `CONVERTED` / `COMPLETED` |
 
 ---
 
@@ -2349,7 +2351,7 @@ From `NEW` or `CONTACTED` this also moves the request to `QUOTED`. While `QUOTED
 |---|---|---|
 | 400 | VALIDATION_FAILED | `amount` missing, zero, negative or implausibly large |
 | 404 | CUSTOM_REQUEST_NOT_FOUND | |
-| 409 | INVALID_STATUS_TRANSITION | The request is `ACCEPTED`, `REJECTED` or `CONVERTED` |
+| 409 | INVALID_STATUS_TRANSITION | The request is `ACCEPTED`, `REJECTED`, `CONVERTED` or `COMPLETED` |
 
 ---
 

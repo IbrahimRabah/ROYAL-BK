@@ -8,13 +8,14 @@ import java.util.Set;
  *
  * <pre>
  *   NEW ──► CONTACTED ──► QUOTED ──► ACCEPTED ──► CONVERTED   (CONVERTED: not yet reachable)
- *     └────────┴───────────┴──► REJECTED
+ *     └────────┴───────────┴──► REJECTED          ACCEPTED ──► COMPLETED   (work done, file closed)
  * </pre>
  *
  * <p>{@code QUOTED} is reached by giving a quote, from {@code NEW} or {@code CONTACTED}
  * (staff may quote without having logged a call). A quote is therefore always present
  * from {@code QUOTED} onwards, which is what makes {@code ACCEPTED} impossible without
- * one. {@code ACCEPTED}, {@code REJECTED} and {@code CONVERTED} cannot be left.
+ * one. {@code ACCEPTED} can only move to {@code COMPLETED}; {@code REJECTED}, {@code CONVERTED}
+ * and {@code COMPLETED} cannot be left.
  */
 public enum CustomRequestStatus {
     NEW,
@@ -22,7 +23,8 @@ public enum CustomRequestStatus {
     QUOTED,
     ACCEPTED,
     REJECTED,
-    CONVERTED;
+    CONVERTED,
+    COMPLETED;
 
     /** Statuses a staff member may set directly with the status endpoint. */
     public Set<CustomRequestStatus> directTransitions() {
@@ -30,7 +32,8 @@ public enum CustomRequestStatus {
             case NEW -> Set.of(CONTACTED, REJECTED);
             case CONTACTED -> Set.of(REJECTED);
             case QUOTED -> Set.of(ACCEPTED, REJECTED);
-            case ACCEPTED, REJECTED, CONVERTED -> Set.of();
+            case ACCEPTED -> Set.of(COMPLETED);
+            case REJECTED, CONVERTED, COMPLETED -> Set.of();
         };
     }
 
@@ -40,6 +43,6 @@ public enum CustomRequestStatus {
     }
 
     public boolean isTerminal() {
-        return this == ACCEPTED || this == REJECTED || this == CONVERTED;
+        return this == ACCEPTED || this == REJECTED || this == CONVERTED || this == COMPLETED;
     }
 }

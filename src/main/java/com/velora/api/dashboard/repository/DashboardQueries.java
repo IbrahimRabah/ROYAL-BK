@@ -103,7 +103,35 @@ public class DashboardQueries {
                 (rs, rowNum) -> new DashboardResponse.StatusCount(
                         rs.getString("fulfillment_status"),
                         arabicStatus(rs.getString("fulfillment_status")),
-                        rs.getInt("order_count")));
+                        rs.getInt("order_count"),
+                        "/admin/orders?status=" + rs.getString("fulfillment_status")));
+    }
+
+    /**
+     * Custom requests that need someone to act, by status; empty statuses are omitted.
+     *
+     * <p>Everything except REJECTED (terminal) and CONVERTED (unreachable). ACCEPTED is
+     * included: the customer agreed and is waiting, and no transition leaves it.
+     * Age is measured from {@code updated_at}, which every status change and quote edit
+     * moves, so it approximates "time in this status".
+     */
+    public List<DashboardResponse.CustomRequestQueue> customRequestQueues() {
+        return jdbc.query("""
+                SELECT status,
+                       COUNT(*) AS request_count,
+                       MAX(DATEDIFF(day, updated_at, SYSDATETIMEOFFSET())) AS oldest_days
+                FROM custom_order_request
+                WHERE status IN ('NEW', 'CONTACTED', 'QUOTED', 'ACCEPTED')
+                GROUP BY status
+                ORDER BY CASE status WHEN 'ACCEPTED' THEN 1 WHEN 'NEW' THEN 2
+                                     WHEN 'CONTACTED' THEN 3 ELSE 4 END
+                """,
+                (rs, rowNum) -> new DashboardResponse.CustomRequestQueue(
+                        rs.getString("status"),
+                        customRequestLabel(rs.getString("status")),
+                        rs.getInt("request_count"),
+                        rs.getInt("oldest_days"),
+                        "/admin/custom-requests?status=" + rs.getString("status")));
     }
 
     /**
@@ -328,6 +356,16 @@ public class DashboardQueries {
 
     private int intOf(Object value) {
         return value == null ? 0 : ((Number) value).intValue();
+    }
+
+    private String customRequestLabel(String status) {
+        return switch (status) {
+            case "NEW" -> "طلب جديد بانتظار الرد";
+            case "CONTACTED" -> "تم التواصل — بانتظار عرض السعر";
+            case "QUOTED" -> "تم إرسال السعر — بانتظار العميل";
+            case "ACCEPTED" -> "وافق العميل — بانتظار التنفيذ";
+            default -> status;
+        };
     }
 
     private String arabicStatus(String status) {

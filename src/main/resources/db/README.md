@@ -14,6 +14,7 @@
 | `V15__order_delivery_schedule.sql` | The first change **after** the baseline: delivery preference and appointment columns on `customer_order`, and the `AWAITING_SCHEDULE` status in its CHECK. Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it on top of the baseline. |
 | `V16__assembly_fee_and_invoice_fees.sql` | Assembly fee: `product.requires_assembly` / `assembly_fee`, `customer_order.assembly_total`, `order_item.assembly_fee`, and `invoice.assembly_total` / `invoice.cod_fee` (existing invoices backfilled from their order). Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it after V15. |
 | `V17__portfolio.sql` | The portfolio: `portfolio_item` (slug unique over archived rows too, `archived_at` soft delete, CHECK that an archived item is never published) and `portfolio_image`. Applied to `royal` on 2026-10-03; `create-test-db.ps1` applies it after V16. |
+| `V18__custom_request_completed.sql` | Adds `COMPLETED` to `ck_custom_req_status` (accepted work finished, file closed). Not yet applied to `royal`; `create-test-db.ps1` applies it after V17. |
 
 There is no `V1`. The original schema script is gone and was never in this repository; the baseline
 replaces it, and was scripted from a database that already had V2–V14 applied.

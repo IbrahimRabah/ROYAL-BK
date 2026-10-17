@@ -24,6 +24,10 @@ public record DashboardResponse(
         @Schema(description = "Orders waiting on someone to act")
         List<StatusCount> actionQueues,
 
+        @Schema(description = "Custom requests waiting on someone to act. Separate from "
+                + "actionQueues: different objects, different screen.")
+        CustomRequests customRequests,
+
         @Schema(description = "Orders stuck in one status too long")
         List<StaleOrder> staleOrders,
 
@@ -69,7 +73,35 @@ public record DashboardResponse(
     ) {
     }
 
-    public record StatusCount(String status, String label, int count) {
+    public record StatusCount(
+            String status,
+            String label,
+            int count,
+            @Schema(description = "Where to go in the admin; same field as on customRequests queues")
+            String actionPath
+    ) {
+    }
+
+    @Schema(description = "Custom requests that need action; statuses with none are omitted")
+    public record CustomRequests(
+            @Schema(description = "Requests needing action, all statuses together")
+            int totalCount,
+            @Schema(description = "Days the longest-waiting of them has been in its current status")
+            int oldestDays,
+            List<CustomRequestQueue> queues
+    ) {
+    }
+
+    @Schema(description = "Same status/label/count as an actionQueues entry, plus age and link")
+    public record CustomRequestQueue(
+            String status,
+            String label,
+            int count,
+            @Schema(description = "Days the oldest request here has been in this status")
+            int oldestDays,
+            @Schema(description = "Where to go in the admin")
+            String actionPath
+    ) {
     }
 
     @Schema(description = "An order that has not moved")

@@ -8,8 +8,8 @@ import jakarta.validation.constraints.Size;
 @Schema(description = "Move a request to a new status")
 public record CustomRequestStatusRequest(
 
-        @Schema(description = "CONTACTED, ACCEPTED or REJECTED. QUOTED is reached by giving a "
-                + "quote; CONVERTED is not available yet.")
+        @Schema(description = "CONTACTED, ACCEPTED, REJECTED or COMPLETED (from ACCEPTED only). "
+                + "QUOTED is reached by giving a quote; CONVERTED is not available yet.")
         @NotNull(message = "Status is required")
         CustomRequestStatus status,
 

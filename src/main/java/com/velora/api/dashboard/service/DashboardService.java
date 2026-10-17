@@ -36,6 +36,10 @@ public class DashboardService {
     /** Below this, deliveries are failing often enough to have a cause. */
     private static final BigDecimal MIN_DELIVERY_SUCCESS = BigDecimal.valueOf(80);
 
+    /** Accepted custom work: the stated lead time is 12 working days, so only well past that is late. */
+    private static final int ACCEPTED_MEDIUM_DAYS = 7;
+    private static final int ACCEPTED_HIGH_DAYS = 14;
+
     private final DashboardQueries queries;
 
     public DashboardService(DashboardQueries queries) {
@@ -51,6 +55,12 @@ public class DashboardService {
         DashboardResponse.Sales sales = buildSales(today, weekStart, monthStart);
         DashboardResponse.CodPosition cod = queries.unsettledCod();
         List<DashboardResponse.StatusCount> queues = queries.actionQueues();
+        List<DashboardResponse.CustomRequestQueue> requestQueues = queries.customRequestQueues();
+        DashboardResponse.CustomRequests customRequests = new DashboardResponse.CustomRequests(
+                requestQueues.stream().mapToInt(DashboardResponse.CustomRequestQueue::count).sum(),
+                requestQueues.stream().mapToInt(DashboardResponse.CustomRequestQueue::oldestDays)
+                        .max().orElse(0),
+                requestQueues);
         List<DashboardResponse.StaleOrder> stale = queries.staleOrders(STALE_ORDER_HOURS);
         List<DashboardResponse.LowStockItem> lowStock = queries.lowStock();
         int stuck = queries.stuckReservations(STUCK_RESERVATION_HOURS);
@@ -60,10 +70,10 @@ public class DashboardService {
         DashboardResponse.CatalogStats catalog = queries.catalogStats();
 
         List<DashboardResponse.Alert> alerts =
-                buildAlerts(cod, queues, stale, lowStock, stuck, delivery, catalog);
+                buildAlerts(cod, queues, requestQueues, stale, lowStock, stuck, delivery, catalog);
 
         return new DashboardResponse(
-                sales, cod, queues, stale, lowStock, stuck, top,
+                sales, cod, queues, customRequests, stale, lowStock, stuck, top,
                 delivery, customers, catalog, alerts,
                 OffsetDateTime.now(ZoneOffset.UTC));
     }
@@ -101,6 +111,7 @@ public class DashboardService {
     private List<DashboardResponse.Alert> buildAlerts(
             DashboardResponse.CodPosition cod,
             List<DashboardResponse.StatusCount> queues,
+            List<DashboardResponse.CustomRequestQueue> requestQueues,
             List<DashboardResponse.StaleOrder> stale,
             List<DashboardResponse.LowStockItem> lowStock,
             int stuckReservations,
@@ -135,7 +146,11 @@ public class DashboardService {
                     "/admin/orders?status=CONFIRMED"));
         }
 
+        addCustomRequestAlerts(alerts, requestQueues, "HIGH");
+
         // ---- MEDIUM: work piling up ----
+
+        addCustomRequestAlerts(alerts, requestQueues, "MEDIUM");
 
         if (!stale.isEmpty()) {
             alerts.add(new DashboardResponse.Alert("MEDIUM", "ORDERS",
@@ -169,6 +184,8 @@ public class DashboardService {
 
         // ---- LOW: worth knowing ----
 
+        addCustomRequestAlerts(alerts, requestQueues, "LOW");
+
         long runningLow = lowStock.stream().filter(item -> item.available() > 0).count();
         if (runningLow > 0) {
             alerts.add(new DashboardResponse.Alert("LOW", "STOCK",
@@ -184,6 +201,55 @@ public class DashboardService {
         }
 
         return alerts;
+    }
+
+    /**
+     * One alert per status whose oldest request has waited past that status's threshold.
+     * Who is being waited on decides the threshold, so one number would be wrong for
+     * most statuses:
+     * <ul>
+     *   <li>ACCEPTED (MEDIUM at 7 days, HIGH at 14): the customer committed and the work is
+     *       made to order with a stated 12 working day lead time, so a few days is not late.</li>
+     *   <li>NEW (MEDIUM, 2 days): nobody has even replied. Matches how fast a lead goes cold.</li>
+     *   <li>CONTACTED (MEDIUM, 3 days): spoken to, but the quote is still owed.</li>
+     *   <li>QUOTED (LOW, 14 days): the customer is deciding; a nudge, not an emergency.</li>
+     * </ul>
+     */
+    private void addCustomRequestAlerts(List<DashboardResponse.Alert> alerts,
+                                        List<DashboardResponse.CustomRequestQueue> queues,
+                                        String severity) {
+        for (DashboardResponse.CustomRequestQueue queue : queues) {
+            String message = switch (queue.status()) {
+                case "ACCEPTED" -> severity.equals(acceptedSeverity(queue.oldestDays()))
+                        ? "%d طلب خاص وافق عليه العميل ولم يُسلَّم بعد — أقدمها منذ %d يوم، تابع التنفيذ"
+                                .formatted(queue.count(), queue.oldestDays())
+                        : null;
+                case "NEW" -> "MEDIUM".equals(severity) && queue.oldestDays() >= 2
+                        ? "%d طلب خاص جديد لم يُرد عليه — أقدمها منذ %d يوم، تواصل مع العميل"
+                                .formatted(queue.count(), queue.oldestDays())
+                        : null;
+                case "CONTACTED" -> "MEDIUM".equals(severity) && queue.oldestDays() >= 3
+                        ? "%d طلب خاص تم التواصل بشأنه ولم يُرسل سعره — أقدمها منذ %d يوم، أرسل السعر"
+                                .formatted(queue.count(), queue.oldestDays())
+                        : null;
+                case "QUOTED" -> "LOW".equals(severity) && queue.oldestDays() >= 14
+                        ? "%d طلب خاص أُرسل سعره ولم يرد العميل منذ %d يوم — تابع معه"
+                                .formatted(queue.count(), queue.oldestDays())
+                        : null;
+                default -> null;
+            };
+            if (message != null) {
+                alerts.add(new DashboardResponse.Alert(
+                        severity, "CUSTOM_REQUESTS", message, queue.actionPath()));
+            }
+        }
+    }
+
+    private static String acceptedSeverity(int oldestDays) {
+        if (oldestDays >= ACCEPTED_HIGH_DAYS) {
+            return "HIGH";
+        }
+        return oldestDays >= ACCEPTED_MEDIUM_DAYS ? "MEDIUM" : "NONE";
     }
 
     /** Days between two dates, for the front end's convenience. */
