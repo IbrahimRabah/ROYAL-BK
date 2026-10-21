@@ -172,8 +172,15 @@ public class ShippingService {
 
     private Cart resolveCart(Long userId, String guestToken, Long explicitCartId) {
         if (explicitCartId != null) {
-            return cartRepository.findByIdAndStatus(explicitCartId, CartStatus.ACTIVE)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.CART_EMPTY));
+            // Cart ids are sequential integers, so an id alone proves nothing. The cart must
+            // be the caller's own; a cart that is someone else's gets exactly the response a
+            // cart that does not exist gets (404), so ids cannot be probed.
+            Cart cart = cartRepository.findByIdAndStatus(explicitCartId, CartStatus.ACTIVE)
+                    .orElseThrow(ShippingService::cartNotFound);
+            if (!ownedBy(cart, userId, guestToken)) {
+                throw cartNotFound();
+            }
+            return cart;
         }
         if (userId != null) {
             return cartRepository.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
@@ -189,6 +196,25 @@ public class ShippingService {
         }
         throw new BusinessException(ErrorCode.CART_EMPTY,
                 "Sign in, or send an X-Guest-Token header");
+    }
+
+    private static BusinessException cartNotFound() {
+        return new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "Cart not found");
+    }
+
+    /**
+     * Signed in: the cart belongs to that user. Anonymous: the cart carries the guest token the
+     * caller presented, which must also carry a valid signature.
+     */
+    private boolean ownedBy(Cart cart, Long userId, String guestToken) {
+        if (userId != null) {
+            return cart.getUser() != null && userId.equals(cart.getUser().getId());
+        }
+        if (guestToken == null || guestToken.isBlank() || cart.getGuestToken() == null) {
+            return false;
+        }
+        guestTokenService.verify(guestToken);
+        return guestToken.equals(cart.getGuestToken());
     }
 
     /** Each cart line's product size class and quantity — what shipping is priced from. */

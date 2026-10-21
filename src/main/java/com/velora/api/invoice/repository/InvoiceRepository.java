@@ -1,6 +1,9 @@
 package com.velora.api.invoice.repository;
 
 import com.velora.api.invoice.domain.Invoice;
+import com.velora.api.invoice.domain.InvoiceStatus;
+import com.velora.api.invoice.domain.InvoiceStatus;
+import com.velora.api.invoice.domain.InvoiceStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -13,9 +16,18 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     Optional<Invoice> findByInvoiceNumber(String invoiceNumber);
 
-    Optional<Invoice> findByOrderId(Long orderId);
+    /** The order's live invoice: at most one exists (filtered unique index uq_invoice_order). */
+    Optional<Invoice> findFirstByOrderIdAndStatusNot(Long orderId, InvoiceStatus status);
 
-    boolean existsByOrderId(Long orderId);
+    default Optional<Invoice> findActiveByOrderId(Long orderId) {
+        return findFirstByOrderIdAndStatusNot(orderId, InvoiceStatus.CANCELLED);
+    }
+
+    /** The most recent cancelled invoice of an order — the one a replacement supersedes. */
+    Optional<Invoice> findFirstByOrderIdAndStatusOrderByIdDesc(Long orderId, InvoiceStatus status);
+
+    /** Every invoice the order has ever had, cancelled ones included. */
+    List<Invoice> findByOrderIdOrderByIdAsc(Long orderId);
 
     /** Scoped by customer — an invoice belongs to exactly one buyer. */
     @Query("""
@@ -28,6 +40,11 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     Page<Invoice> findAllByOrderByIssuedAtDesc(Pageable pageable);
 
+    /** One order's invoices, cancelled ones included, newest first. */
+    Page<Invoice> findByOrderIdOrderByIssuedAtDesc(Long orderId, Pageable pageable);
+
+    boolean existsByOrderIdAndStatus(Long orderId, InvoiceStatus status);
+
     /**
      * Delivered orders that were never invoiced.
      *
@@ -38,7 +55,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @Query("""
             select o.id from CustomerOrder o
             where o.fulfillmentStatus = com.velora.api.order.domain.FulfillmentStatus.DELIVERED
-              and not exists (select 1 from Invoice i where i.order.id = o.id)
+              and not exists (select 1 from Invoice i where i.order.id = o.id
+                            and i.status <> com.velora.api.invoice.domain.InvoiceStatus.CANCELLED)
             order by o.deliveredAt asc
             """)
     List<Long> findDeliveredOrderIdsWithoutInvoice();

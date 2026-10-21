@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,6 +17,11 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -82,9 +89,28 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        // No credentials (or an expired/invalid token, which the JWT filter treats
+                        // as no credentials) is 401; a signed-in caller without the role is 403.
+                        // The client refreshes its token on 401 only, so the two must not mix.
+                        .authenticationEntryPoint((request, response, e) ->
+                                writeProblem(request, response, HttpStatus.UNAUTHORIZED,
+                                        "UNAUTHORIZED", "Authentication required"))
+                        .accessDeniedHandler((request, response, e) ->
+                                writeProblem(request, response, HttpStatus.FORBIDDEN,
+                                        "FORBIDDEN", "You do not have permission to perform this action")))
                 .authorizeHttpRequests(auth -> auth
+                        // Invoice PDFs hold customer names, addresses and phones. They are served
+                        // only by GET /admin/invoices/{id}/pdf and GET /me/invoices/{n}/pdf, never
+                        // as static files, so this folder is closed even though the rest of
+                        // /uploads is public. (StorageConfig refuses it at the resource layer too.)
+                        .requestMatchers("/uploads/invoices/**").denyAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
+                        // Merging a guest cart INTO an account only makes sense signed in. This must
+                        // come before the blanket cart rule below, which would otherwise let an
+                        // anonymous call reach the handler.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cart/merge").authenticated()
                         // Guest checkout: cart and order placement work without an account.
                         .requestMatchers("/api/v1/cart/**").permitAll()
                         .requestMatchers("/api/v1/shipping/quote").permitAll()
@@ -99,6 +125,23 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /** Writes the API's standard error body for failures raised before a controller runs. */
+    private static void writeProblem(HttpServletRequest request, HttpServletResponse response,
+                                     HttpStatus status, String code, String detail)
+            throws IOException {
+        String instance = request.getRequestURI().replace("\\", "\\\\").replace("\"", "\\\"");
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"type\":\"/errors/" + code.toLowerCase() + "\","
+                + "\"title\":\"" + status.getReasonPhrase() + "\","
+                + "\"status\":" + status.value() + ","
+                + "\"code\":\"" + code + "\","
+                + "\"detail\":\"" + detail + "\","
+                + "\"instance\":\"" + instance + "\","
+                + "\"timestamp\":\"" + OffsetDateTime.now() + "\"}");
     }
 
     /**

@@ -1,12 +1,15 @@
 package com.velora.api.common.config;
 
 import com.velora.api.common.storage.StorageProperties;
+import java.io.IOException;
 import java.nio.file.Paths;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.Resource;
 import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.resource.PathResourceResolver;
 
 /**
  * Serves uploaded images over HTTP from the storage folder.
@@ -31,6 +34,19 @@ public class StorageConfig implements WebMvcConfigurer {
 
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations(location)
-                .setCachePeriod(60 * 60 * 24 * 30);   // 30 days; keys are immutable
+                .setCachePeriod(60 * 60 * 24 * 30)   // 30 days; keys are immutable
+                .resourceChain(true)
+                .addResolver(new PathResourceResolver() {
+                    @Override
+                    protected Resource getResource(@NonNull String resourcePath,
+                                                   @NonNull Resource location) throws IOException {
+                        // Invoice PDFs are private. SecurityConfig already denies the URL; this
+                        // keeps them unreachable even if that rule is ever loosened or bypassed.
+                        if (resourcePath.startsWith("invoices/") || resourcePath.startsWith("/invoices/")) {
+                            return null;
+                        }
+                        return super.getResource(resourcePath, location);
+                    }
+                });
     }
 }

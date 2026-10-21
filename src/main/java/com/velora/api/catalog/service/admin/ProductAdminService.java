@@ -401,9 +401,8 @@ public class ProductAdminService {
             if (excludeProductId == null) {
                 return !productRepository.existsBySlug(candidate);
             }
-            return productRepository.findBySlugAndArchivedAtIsNull(candidate)
-                    .map(existing -> existing.getId().equals(excludeProductId))
-                    .orElse(true);
+            // Same scope as the unique index uq_prod_slug: archived products still hold their slug.
+            return !productRepository.existsBySlugAndIdNot(candidate, excludeProductId);
         });
 
         if (slug == null) {

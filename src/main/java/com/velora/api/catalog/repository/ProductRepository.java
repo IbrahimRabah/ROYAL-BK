@@ -25,6 +25,9 @@ public interface ProductRepository
 
     boolean existsBySlug(String slug);
 
+    /** Every row counts, archived or not: uq_prod_slug covers them all. */
+    boolean existsBySlugAndIdNot(String slug, Long id);
+
     /** "You may also like" — same category, excluding the product being viewed. */
     @Query("""
             select p from Product p

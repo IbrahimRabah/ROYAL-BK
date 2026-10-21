@@ -1,5 +1,7 @@
 package com.velora.api.invoice.service;
 
+import com.velora.api.audit.domain.AuditAction;
+import com.velora.api.audit.service.AuditService;
 import com.velora.api.common.config.BrandingProperties;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
@@ -63,6 +65,7 @@ public class InvoiceService {
     private final PdfRenderer pdfRenderer;
     private final StorageService storageService;
     private final BrandingProperties branding;
+    private final AuditService auditService;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                           InvoiceSequenceRepository sequenceRepository,
@@ -71,7 +74,8 @@ public class InvoiceService {
                           TemplateRenderer templateRenderer,
                           PdfRenderer pdfRenderer,
                           StorageService storageService,
-                          BrandingProperties branding) {
+                          BrandingProperties branding,
+                          AuditService auditService) {
         this.invoiceRepository = invoiceRepository;
         this.sequenceRepository = sequenceRepository;
         this.orderRepository = orderRepository;
@@ -80,6 +84,7 @@ public class InvoiceService {
         this.pdfRenderer = pdfRenderer;
         this.storageService = storageService;
         this.branding = branding;
+        this.auditService = auditService;
     }
 
     // ------------------------------------------------------------------- issue
@@ -93,11 +98,27 @@ public class InvoiceService {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public Invoice issueForOrder(Long orderId) {
-        Invoice existing = invoiceRepository.findByOrderId(orderId).orElse(null);
+        return issueForOrder(orderId, null);
+    }
+
+    /**
+     * Same, with the acting staff member for the audit trail of a re-issue.
+     *
+     * <p>An order has at most one live (non-cancelled) invoice. If it has one, it is returned and
+     * no number is consumed. If its only invoices are cancelled, a NEW invoice is issued with the
+     * next number in the sequence and linked to the cancelled one it replaces; the cancelled
+     * invoice keeps its own number and stays on record.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public Invoice issueForOrder(Long orderId, Long actorId) {
+        Invoice existing = invoiceRepository.findActiveByOrderId(orderId).orElse(null);
         if (existing != null) {
             log.debug("Order {} already has invoice {}", orderId, existing.getInvoiceNumber());
             return existing;
         }
+        Invoice replaced = invoiceRepository
+                .findFirstByOrderIdAndStatusOrderByIdDesc(orderId, InvoiceStatus.CANCELLED)
+                .orElse(null);
 
         CustomerOrder order = orderRepository.findWithItemsById(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
@@ -121,6 +142,7 @@ public class InvoiceService {
         invoice.setSequenceNumber(sequence);
         invoice.setOrder(order);
         invoice.setStatus(InvoiceStatus.ISSUED);
+        invoice.setReplacesInvoice(replaced);
 
         // ---- seller snapshot ----
         invoice.setSellerName(seller.getLegalName());
@@ -148,6 +170,14 @@ public class InvoiceService {
         invoice.setPaymentMethod(order.getPaymentMethod().name());
 
         Invoice saved = invoiceRepository.save(invoice);
+
+        if (replaced != null) {
+            // After the save: a lost race on the one-live-invoice index fails there, rolls the
+            // number back, and leaves no trail for an invoice that was never issued.
+            auditService.record(AuditAction.INVOICE_REISSUED, "INVOICE", saved.getId(),
+                    invoiceNumber, replaced.getInvoiceNumber(), invoiceNumber,
+                    "Replaces cancelled invoice " + replaced.getInvoiceNumber(), actorId);
+        }
 
         // The PDF is generated after the row exists so a rendering failure cannot
         // leave a numbered invoice with no record. It is regenerable at any time.
@@ -189,7 +219,7 @@ public class InvoiceService {
      * cancelled invoice still has to be explainable to an auditor.
      */
     @Transactional
-    public Invoice cancel(Long invoiceId, String reason) {
+    public Invoice cancel(Long invoiceId, String reason, Long actorId) {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Invoice not found"));
@@ -208,7 +238,11 @@ public class InvoiceService {
         invoice.setCancelReason(reason);
 
         log.warn("Cancelled invoice {}: {}", invoice.getInvoiceNumber(), reason);
-        return invoiceRepository.save(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+        auditService.record(AuditAction.INVOICE_CANCELLED, "INVOICE", saved.getId(),
+                saved.getInvoiceNumber(), InvoiceStatus.ISSUED.name(),
+                InvoiceStatus.CANCELLED.name(), reason, actorId);
+        return saved;
     }
 
     // ------------------------------------------------------------------ read
@@ -240,9 +274,17 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public com.velora.api.common.dto.PageResponse<InvoiceResponse> list(
-            org.springframework.data.domain.Pageable pageable) {
-        return com.velora.api.common.dto.PageResponse.from(
-                invoiceRepository.findAllByOrderByIssuedAtDesc(pageable), this::toResponse);
+            Long orderId, org.springframework.data.domain.Pageable pageable) {
+        var page = orderId == null
+                ? invoiceRepository.findAllByOrderByIssuedAtDesc(pageable)
+                : invoiceRepository.findByOrderIdOrderByIssuedAtDesc(orderId, pageable);
+        return com.velora.api.common.dto.PageResponse.from(page, this::toResponse);
+    }
+
+    /** Whether the order has ever had an invoice cancelled (the live one, if any, is separate). */
+    @Transactional(readOnly = true)
+    public boolean hasCancelledInvoices(Long orderId) {
+        return invoiceRepository.existsByOrderIdAndStatus(orderId, InvoiceStatus.CANCELLED);
     }
 
     /** Delivered orders with no invoice. Should always be empty. */
@@ -258,7 +300,8 @@ public class InvoiceService {
      */
     @Transactional(readOnly = true)
     public String findInvoiceNumberForOrder(Long orderId) {
-        return invoiceRepository.findByOrderId(orderId)
+        // The live invoice only: an order whose invoices are all cancelled has none to show.
+        return invoiceRepository.findActiveByOrderId(orderId)
                 .map(Invoice::getInvoiceNumber)
                 .orElse(null);
     }
@@ -388,8 +431,11 @@ private byte[] renderPdf(Invoice invoice) {
                 invoice.getTaxTotal(),
                 invoice.getNetTotal(),
                 invoice.getCurrency(),
-                invoice.getPdfKey() == null ? null : storageService.urlFor(invoice.getPdfKey()),
+                // An authenticated endpoint, never a static /uploads URL: the PDF names the buyer.
+                "/api/v1/admin/invoices/" + invoice.getId() + "/pdf",
                 invoice.getIssuedAt(),
-                invoice.getCancelReason());
+                invoice.getCancelReason(),
+                invoice.getReplacesInvoice() == null
+                        ? null : invoice.getReplacesInvoice().getInvoiceNumber());
     }
 }

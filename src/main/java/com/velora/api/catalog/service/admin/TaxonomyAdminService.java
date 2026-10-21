@@ -243,7 +243,11 @@ public class TaxonomyAdminService {
                     ? request.slug()
                     : request.translations().get(0).name();
             category.setSlug(SlugGenerator.generateUnique(source,
-                    s -> !categoryRepository.existsBySlug(s)));
+                    s -> category.getId() == null
+                            ? !categoryRepository.existsBySlug(s)
+                            // Editing: the category's own current slug is not a clash. Without
+                            // this, re-saving an unchanged slug found itself and became "<slug>-2".
+                            : !categoryRepository.existsBySlugAndIdNot(s, category.getId())));
         }
 
         if (request.displayOrder() != null) {

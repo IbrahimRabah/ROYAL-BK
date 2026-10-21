@@ -15,5 +15,15 @@ public enum RemittanceStatus {
     SHORT,
 
     /** Voided. Kept for the record; the orders revert to unpaid. */
-    CANCELLED
+    CANCELLED;
+
+    /** Cancelled is final: nothing leaves it, and a cancelled settlement is never reopened. */
+    public boolean isTerminal() {
+        return this == CANCELLED;
+    }
+
+    /** The only legal move out of SETTLED or SHORT. */
+    public boolean canBeCancelled() {
+        return !isTerminal();
+    }
 }

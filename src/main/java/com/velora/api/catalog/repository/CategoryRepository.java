@@ -26,4 +26,7 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
     List<Category> findByParentIdAndActiveTrueOrderByDisplayOrderAsc(Long parentId);
 
     boolean existsBySlug(String slug);
+
+    /** Whether a DIFFERENT category already uses this slug (the row being edited does not count). */
+    boolean existsBySlugAndIdNot(String slug, Long id);
 }

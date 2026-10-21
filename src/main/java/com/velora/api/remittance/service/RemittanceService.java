@@ -206,7 +206,7 @@ public class RemittanceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Remittance not found"));
 
-        if (remittance.getStatus() == RemittanceStatus.CANCELLED) {
+        if (!remittance.getStatus().canBeCancelled()) {
             throw new BusinessException(ErrorCode.INVALID_STATUS_TRANSITION,
                     "This remittance is already cancelled");
         }
@@ -220,6 +220,8 @@ public class RemittanceService {
             order.setPaymentStatus(PaymentStatus.PENDING);
             order.touch();
             orderRepository.save(order);
+            // The item stays on record, but the order is free to enter a new settlement.
+            item.setActive(false);
         }
 
         remittance.setStatus(RemittanceStatus.CANCELLED);

@@ -91,7 +91,7 @@ public class OrderService {
         CustomerOrder order = orderRepository
                 .findByOrderNumberAndCustomerId(orderNumber, customerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-        return toResponse(order, locale);
+        return toResponse(order, locale, false);
     }
 
     @Transactional(readOnly = true)
@@ -390,6 +390,11 @@ public class OrderService {
     }
 
     private OrderResponse toResponse(CustomerOrder order, String locale) {
+        return toResponse(order, locale, true);
+    }
+
+    /** {@code admin} adds the staff-only hint about cancelled invoices; customers never get it. */
+    private OrderResponse toResponse(CustomerOrder order, String locale, boolean admin) {
         List<OrderItemResponse> items = order.getItems().stream()
                 .map(item -> toItemResponse(item, locale))
                 .toList();
@@ -455,7 +460,8 @@ public class OrderService {
                 order.getShippedAt(),
                 order.getDeliveredAt(),
                 order.getCancelledAt(),
-                order.getCancelReason());
+                order.getCancelReason(),
+                admin && invoiceService.hasCancelledInvoices(order.getId()) ? Boolean.TRUE : null);
     }
 
     private OrderItemResponse toItemResponse(OrderItem item, String locale) {

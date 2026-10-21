@@ -51,5 +51,3 @@ velora:
       window-minutes: 60
   business:
     reservation-ttl-minutes: 20
-    default-tax-rate: 0.14
-    prices-include-tax: true

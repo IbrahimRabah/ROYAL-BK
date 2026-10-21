@@ -327,11 +327,11 @@ class PortfolioIntegrationTest {
     // ================================================================= security
 
     @Test
-    @DisplayName("Every admin route needs an admin: anonymous and customers are both refused with 403")
+    @DisplayName("Every admin route needs an admin: anonymous is 401, a signed-in customer is 403")
     void adminOnly() throws Exception {
-        mvc.perform(get(ADMIN)).andExpect(status().isForbidden());
+        mvc.perform(get(ADMIN)).andExpect(status().isUnauthorized());
         mvc.perform(post(ADMIN).contentType(MediaType.APPLICATION_JSON).content(body(title(), null)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         mvc.perform(get(ADMIN).with(signedIn("CUSTOMER"))).andExpect(status().isForbidden());
         mvc.perform(delete(ADMIN + "/1").with(signedIn("CUSTOMER"))).andExpect(status().isForbidden());
     }

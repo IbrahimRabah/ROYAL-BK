@@ -67,8 +67,15 @@ public class ProductVariant extends BaseAuditEntity {
     @Column(name = "cost_price", precision = 19, scale = 4)
     private BigDecimal costPrice;
 
+    /**
+     * Egyptian VAT, the rate a variant gets when none is given. There is deliberately no
+     * application setting for it: the rate that matters is each variant's own {@code taxRate},
+     * copied onto every order line when it is bought.
+     */
+    public static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.1400");
+
     @Column(name = "tax_rate", nullable = false, precision = 5, scale = 4)
-    private BigDecimal taxRate = new BigDecimal("0.1400");
+    private BigDecimal taxRate = DEFAULT_TAX_RATE;
 
     /** Drives weight-based shipping rates. */
     @Column(name = "weight_grams", nullable = false)

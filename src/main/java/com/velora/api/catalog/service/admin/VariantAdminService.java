@@ -177,7 +177,7 @@ public class VariantAdminService {
         variant.setPrice(item.price());
         variant.setCompareAtPrice(item.compareAtPrice());
         variant.setCostPrice(item.costPrice());
-        variant.setTaxRate(item.taxRate() == null ? new BigDecimal("0.1400") : item.taxRate());
+        variant.setTaxRate(item.taxRate() == null ? ProductVariant.DEFAULT_TAX_RATE : item.taxRate());
         variant.setWeightGrams(item.weightGrams() == null ? 0 : item.weightGrams());
         variant.setStatus(VariantStatus.ACTIVE);
         variant.setPosition((short) product.getVariants().size());

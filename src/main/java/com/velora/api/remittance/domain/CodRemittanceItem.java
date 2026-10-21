@@ -45,6 +45,13 @@ public class CodRemittanceItem {
     @Column(name = "order_number", nullable = false, length = 30)
     private String orderNumber;
 
+    /**
+     * False once the settlement is cancelled. The row stays as history, but only an active item
+     * counts toward "an order is in at most one settlement" (filtered unique index).
+     */
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
     /** Snapshot of the amount collected for this order. */
     @Column(name = "amount", nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;

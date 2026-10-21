@@ -17,7 +17,10 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import com.velora.api.identity.security.UserPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,11 +39,14 @@ public class AdminInvoiceController {
         this.invoiceService = invoiceService;
     }
 
-    @Operation(summary = "List invoices, newest first")
+    @Operation(summary = "List invoices, newest first",
+            description = "With orderId, only that order's invoices, cancelled ones included "
+                    + "(each shows its status and replacesInvoiceNumber).")
     @GetMapping
     public PageResponse<InvoiceResponse> list(
+            @RequestParam(required = false) Long orderId,
             @ParameterObject @PageableDefault(size = 20) Pageable pageable) {
-        return invoiceService.list(pageable);
+        return invoiceService.list(orderId, pageable);
     }
 
     @Operation(summary = "One invoice")
@@ -70,12 +76,15 @@ public class AdminInvoiceController {
                     orders that slipped through — delivered before this module existed,
                     or fixed up by hand in the database.
 
-                    Idempotent: an order that already has an invoice returns it rather
-                    than consuming another number.
+                    Idempotent: an order that already has a live (non-cancelled) invoice
+                    returns it rather than consuming another number. If the order's invoice was
+                    cancelled, this issues a NEW invoice with the next number, linked to the
+                    cancelled one through replacesInvoiceNumber.
                     """)
     @PostMapping("/issue/{orderId}")
-    public InvoiceResponse issue(@PathVariable Long orderId) {
-        return invoiceService.get(invoiceService.issueForOrder(orderId).getId());
+    public InvoiceResponse issue(@PathVariable Long orderId,
+                                 @AuthenticationPrincipal UserPrincipal principal) {
+        return invoiceService.get(invoiceService.issueForOrder(orderId, principal.id()).getId());
     }
 
     @Operation(summary = "Cancel an invoice",
@@ -86,8 +95,10 @@ public class AdminInvoiceController {
                     """)
     @PostMapping("/{invoiceId}/cancel")
     public InvoiceResponse cancel(@PathVariable Long invoiceId,
-                                  @Valid @RequestBody CancelInvoiceRequest request) {
-        return invoiceService.get(invoiceService.cancel(invoiceId, request.reason()).getId());
+                                  @Valid @RequestBody CancelInvoiceRequest request,
+                                  @AuthenticationPrincipal UserPrincipal principal) {
+        return invoiceService.get(
+                invoiceService.cancel(invoiceId, request.reason(), principal.id()).getId());
     }
 
     @Operation(summary = "Delivered orders with no invoice",

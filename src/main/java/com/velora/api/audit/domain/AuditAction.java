@@ -62,6 +62,12 @@ public enum AuditAction {
     /** An invoice was voided. Always needs a reason. */
     INVOICE_CANCELLED,
 
+    /**
+     * A new invoice was issued for an order whose earlier invoice had been cancelled.
+     * oldValue is the cancelled invoice number, newValue the replacement.
+     */
+    INVOICE_REISSUED,
+
     /** A refund or a manual payment status change. */
     PAYMENT_ADJUSTED,
 

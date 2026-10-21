@@ -137,5 +137,3 @@ velora:
     sku-prefix: RYL
   business:
     reservation-ttl-minutes: 20
-    default-tax-rate: 0.14
-    prices-include-tax: true

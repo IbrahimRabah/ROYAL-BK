@@ -1,6 +1,13 @@
-# VELORA — Project Rules
+# ROYAL IRON — Project Rules
 
-Premium e-commerce for the Egyptian market: watches, wallets, perfumes.
+ROYAL IRON is a furniture and wrought-ironwork store. It sells furniture
+(tables, beds, chairs, consoles, shelving, desks) in wood, in forged
+iron, and in both together, plus custom ironwork such as gates,
+staircases and railings. It does not sell watches, wallets or perfumes —
+that text is left over from the VELORA project this repository was
+forked from.
+
+E-commerce for the Egyptian market.
 Spring Boot 4.1 · Java 21 · SQL Server 2025 · Angular front end (separate repo)
 Base package: `com.velora.api`
 

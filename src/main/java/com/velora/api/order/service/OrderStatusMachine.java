@@ -108,6 +108,15 @@ public class OrderStatusMachine {
     }
 
     public boolean canTransition(FulfillmentStatus from, FulfillmentStatus to) {
+        return isAllowed(from, to);
+    }
+
+    /**
+     * The transition table as a static question, for code that cannot hold a machine (the order
+     * entity). There is exactly one table: this, {@link #canTransition} and
+     * {@link #requireTransition} all read it.
+     */
+    public static boolean isAllowed(FulfillmentStatus from, FulfillmentStatus to) {
         return FULFILLMENT.getOrDefault(from, EnumSet.noneOf(FulfillmentStatus.class))
                 .contains(to);
     }

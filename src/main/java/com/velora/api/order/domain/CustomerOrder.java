@@ -1,6 +1,7 @@
 package com.velora.api.order.domain;
 
 import com.velora.api.identity.domain.AppUser;
+import com.velora.api.order.service.OrderStatusMachine;
 import com.velora.api.shipping.domain.Governorate;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -251,10 +252,12 @@ public class CustomerOrder {
         return customer == null;
     }
 
-    /** Cancellation is allowed until the parcel leaves. */
+    /**
+     * Whether the order can be cancelled right now. Asks the same transition table the cancel
+     * operation enforces, so the flag shown to the client and the operation cannot disagree.
+     */
     public boolean isCancellable() {
-        return !fulfillmentStatus.isDispatched()
-                && fulfillmentStatus != FulfillmentStatus.CANCELLED;
+        return OrderStatusMachine.isAllowed(fulfillmentStatus, FulfillmentStatus.CANCELLED);
     }
 
     /** The full delivery address on one line, for courier labels. */

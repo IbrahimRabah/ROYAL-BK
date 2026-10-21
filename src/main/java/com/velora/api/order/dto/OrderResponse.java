@@ -87,7 +87,10 @@ public record OrderResponse(
         OffsetDateTime shippedAt,
         OffsetDateTime deliveredAt,
         OffsetDateTime cancelledAt,
-        String cancelReason
+        String cancelReason,
+        @Schema(description = "Admin responses only. True when the order has a cancelled invoice "
+                + "(list them with GET /admin/invoices?orderId=). Absent when there is none.")
+        Boolean hasCancelledInvoices
 ) {
 
     @Schema(description = "The delivery address as it was at purchase")

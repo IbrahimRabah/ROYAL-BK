@@ -17,9 +17,12 @@ public record InvoiceResponse(
         BigDecimal taxTotal,
         BigDecimal netTotal,
         String currency,
-        @Schema(description = "Null when the PDF has not been stored yet")
+        @Schema(description = "Path of the admin PDF endpoint (GET, needs the admin bearer token — fetch it as a blob; it cannot be opened as a plain link).")
         String pdfUrl,
         OffsetDateTime issuedAt,
-        String cancelReason
+        String cancelReason,
+        @Schema(description = "Number of the cancelled invoice this one replaces. Absent when "
+                + "it replaces none.")
+        String replacesInvoiceNumber
 ) {
 }

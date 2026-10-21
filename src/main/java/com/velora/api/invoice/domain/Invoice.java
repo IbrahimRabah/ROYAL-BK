@@ -10,7 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToOne;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -49,9 +49,15 @@ public class Invoice {
     @Column(name = "sequence_number", nullable = false)
     private int sequenceNumber;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    /** Many: an order may carry any number of cancelled invoices and one live one. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "order_id", nullable = false)
     private CustomerOrder order;
+
+    /** The cancelled invoice this one replaces, so the chain can be read without guessing. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "replaces_invoice_id")
+    private Invoice replacesInvoice;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)

@@ -253,7 +253,7 @@ class PurchaseJourneyIntegrationTest {
         advance(orderId, FulfillmentStatus.OUT_FOR_DELIVERY);
         advance(orderId, FulfillmentStatus.DELIVERED);
 
-        Invoice invoice = invoiceRepository.findByOrderId(orderId).orElse(null);
+        Invoice invoice = invoiceRepository.findActiveByOrderId(orderId).orElse(null);
         assertThat(invoice)
                 .as("delivery must produce an invoice with no further action")
                 .isNotNull();
@@ -440,7 +440,7 @@ class PurchaseJourneyIntegrationTest {
         advance(orderId, FulfillmentStatus.OUT_FOR_DELIVERY);
         advance(orderId, FulfillmentStatus.DELIVERED);
 
-        Invoice first = invoiceRepository.findByOrderId(orderId).orElseThrow();
+        Invoice first = invoiceRepository.findActiveByOrderId(orderId).orElseThrow();
 
         Integer beforeCounter = jdbc.queryForObject(
                 "SELECT last_number FROM invoice_sequence WHERE fiscal_year = ?",
