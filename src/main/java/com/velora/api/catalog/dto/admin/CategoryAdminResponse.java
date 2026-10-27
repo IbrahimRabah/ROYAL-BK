@@ -1,5 +1,6 @@
 package com.velora.api.catalog.dto.admin;
 
+import com.velora.api.catalog.domain.CategoryScope;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
@@ -19,6 +20,10 @@ public record CategoryAdminResponse(
         Long id,
         String slug,
         @Schema(description = "Null for a top-level category") Long parentId,
+        @Schema(description = "PRODUCT (shop) or PORTFOLIO (portfolio only, never in the shop "
+                + "navigation). A child always has its parent's scope.",
+                implementation = CategoryScope.class)
+        CategoryScope scope,
         List<CategoryTranslationResponse> translations,
         String imageUrl,
         String bannerUrl,

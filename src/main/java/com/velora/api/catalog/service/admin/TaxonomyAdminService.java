@@ -8,6 +8,7 @@ import com.velora.api.catalog.domain.AttributeValueTranslation;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
 import com.velora.api.catalog.domain.CategoryImageType;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.domain.CategoryTranslation;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
@@ -20,11 +21,13 @@ import com.velora.api.catalog.dto.admin.TranslationRequest;
 import com.velora.api.catalog.repository.AttributeRepository;
 import com.velora.api.catalog.repository.BrandRepository;
 import com.velora.api.catalog.repository.CategoryRepository;
+import com.velora.api.catalog.repository.ProductRepository;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.storage.StorageService;
 import com.velora.api.common.storage.StoredFile;
 import com.velora.api.common.util.SlugGenerator;
+import com.velora.api.portfolio.repository.PortfolioItemRepository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -49,15 +52,21 @@ public class TaxonomyAdminService {
     private static final Logger log = LoggerFactory.getLogger(TaxonomyAdminService.class);
 
     private final CategoryRepository categoryRepository;
+    private final ProductRepository productRepository;
+    private final PortfolioItemRepository portfolioItemRepository;
     private final BrandRepository brandRepository;
     private final AttributeRepository attributeRepository;
     private final StorageService storageService;
 
     public TaxonomyAdminService(CategoryRepository categoryRepository,
+                                ProductRepository productRepository,
+                                PortfolioItemRepository portfolioItemRepository,
                                 BrandRepository brandRepository,
                                 AttributeRepository attributeRepository,
                                 StorageService storageService) {
         this.categoryRepository = categoryRepository;
+        this.productRepository = productRepository;
+        this.portfolioItemRepository = portfolioItemRepository;
         this.brandRepository = brandRepository;
         this.attributeRepository = attributeRepository;
         this.storageService = storageService;
@@ -93,7 +102,18 @@ public class TaxonomyAdminService {
      */
     @Transactional(readOnly = true)
     public List<CategoryAdminResponse> getCategoryTree() {
-        List<Category> all = categoryRepository.findAllByOrderByDisplayOrderAscIdAsc();
+        return getCategoryTree(null);
+    }
+
+    /**
+     * Same tree, optionally of one scope. The product form asks for PRODUCT, the portfolio form
+     * for PORTFOLIO, the category screen for everything (each node says which it is).
+     */
+    @Transactional(readOnly = true)
+    public List<CategoryAdminResponse> getCategoryTree(CategoryScope scope) {
+        List<Category> all = scope == null
+                ? categoryRepository.findAllByOrderByDisplayOrderAscIdAsc()
+                : categoryRepository.findByScopeOrderByDisplayOrderAscIdAsc(scope);
 
         Map<Long, List<Category>> byParent = all.stream()
                 .filter(c -> c.getParent() != null)
@@ -153,6 +173,7 @@ public class TaxonomyAdminService {
                 category.getId(),
                 category.getSlug(),
                 category.getParent() == null ? null : category.getParent().getId(),
+                category.getScope(),
                 translations,
                 storageService.urlFor(category.getImageUrl()),
                 storageService.urlFor(category.getBannerUrl()),
@@ -225,18 +246,19 @@ public class TaxonomyAdminService {
     }
 
     private void applyCategory(Category category, CategorySaveRequest request, boolean isNew) {
+        Category parent = null;
         if (request.parentId() != null) {
-            Category parent = categoryRepository.findById(request.parentId())
+            parent = categoryRepository.findById(request.parentId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND,
                             "Parent category not found"));
             // A category cannot be its own ancestor.
             if (category.getId() != null && parent.getId().equals(category.getId())) {
                 throw new BusinessException(ErrorCode.CATEGORY_CYCLE);
             }
-            category.setParent(parent);
-        } else {
-            category.setParent(null);
         }
+
+        applyScope(category, request.scope(), parent, isNew);
+        category.setParent(parent);
 
         if (isNew || request.slug() != null) {
             String source = request.slug() != null && !request.slug().isBlank()
@@ -258,6 +280,50 @@ public class TaxonomyAdminService {
         }
 
         mergeCategoryTranslations(category, request.translations());
+    }
+
+    /**
+     * Decides the category's scope.
+     *
+     * <p><b>THE ONE EXCEPTION TO FULL-REPLACE.</b> {@code PUT /admin/categories/{id}} replaces the
+     * category wholesale - an omitted {@code parentId} moves it to the root, omitted translations
+     * are deleted. {@code scope} is the one field that does NOT work that way: omitted on an
+     * update it means "no change". Treating it like the others would reset it to PRODUCT, and
+     * any client that does not send it yet (an older form, a script) would silently turn a
+     * PORTFOLIO category into a product category - it would appear in the shop navigation and
+     * nobody would notice until a customer opened an empty category. Left unchanged, a client
+     * that forgets the field changes nothing. Do not "fix" this to match the other fields.
+     *
+     * <p>On create an omitted scope is PRODUCT, or the parent's scope when a parent is given (a
+     * child cannot have any other). The database holds the same rule with a composite foreign
+     * key; the checks here exist to give a readable error instead of a constraint violation.
+     */
+    private void applyScope(Category category, CategoryScope requested, Category parent,
+                            boolean isNew) {
+        CategoryScope target;
+        if (isNew) {
+            target = requested != null ? requested
+                    : parent != null ? parent.getScope() : CategoryScope.PRODUCT;
+        } else {
+            target = requested != null ? requested : category.getScope();
+            if (target != category.getScope() && isInUse(category)) {
+                throw new BusinessException(ErrorCode.CATEGORY_SCOPE_IN_USE);
+            }
+        }
+
+        if (parent != null && parent.getScope() != target) {
+            throw new BusinessException(ErrorCode.CATEGORY_SCOPE_MISMATCH,
+                    "A " + target + " category cannot be a child of a " + parent.getScope()
+                            + " category");
+        }
+        category.setScope(target);
+    }
+
+    /** Children, products or portfolio items (archived ones included) depend on the scope. */
+    private boolean isInUse(Category category) {
+        return categoryRepository.existsByParentId(category.getId())
+                || productRepository.existsByCategoryId(category.getId())
+                || portfolioItemRepository.existsByCategoryId(category.getId());
     }
 
     /**

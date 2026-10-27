@@ -57,6 +57,12 @@
 - **طلب خاص**: نموذج يرسله أي زائر (بدون حساب) يطلب مقاسًا مختلفًا أو منتجًا يُصنع بعد الطلب أو عملًا مخصصًا. ليس عملية بيع: لا حجز مخزون ولا تسعير حتى يعرض الموظف **عرض سعر (quote)**. الرقم `REQ-<سنة>-<6 أرقام>` متسلسل بلا فجوات لكل سنة (بتوقيت القاهرة).
 - لا توجد نقطة نهاية للعميل لقراءة حالة طلبه الخاص أو سرد طلباته؛ العميل يحصل فقط على `requestNumber` ورمز مرفقات مرة واحدة عند الإنشاء. لا يُرسَل أي بريد أو إشعار عن الطلب الخاص.
 - **المعرض (portfolio)**: كتالوج أعمال منجزة للعرض فقط (عنوان/وصف/صور/تصنيف/تاريخ إنجاز)؛ ليس منتجات قابلة للشراء. يبدأ غير منشور، ويُؤرشف بدل الحذف.
+- **نطاق التصنيف (`category.scope`)**: المعرض والمتجر يتشاركان جدول `category`، والذي يفصل بينهما العمود `scope` = `PRODUCT` (الافتراضي، وكل التصنيفات الموجودة) أو `PORTFOLIO`.
+  - تصنيف `PORTFOLIO` لا يظهر أبدًا في شجرة المتجر ولا في `GET /categories/{slug}` (404 كأنه مجهول) ولا في فلاتر المنتجات؛ وتصنيف `PRODUCT` لا يظهر في `GET /portfolio/categories` (قائمة **مسطّحة** لتصنيفات `PORTFOLIO` الفعّالة؛ تصير شجرة إن عششوا يومًا).
+  - **الظهور يحدده النطاق و`active` فقط — لا `productCount`.** تصنيف `PRODUCT` فارغ يبقى ظاهرًا في المتجر عمدًا (العميل يريد رؤية الهيكل كاملًا قبل أن يملأه).
+  - الابن يشارك نطاق أبيه، والمنتج لا يوضع إلا في تصنيف `PRODUCT` وعنصر المعرض لا يوضع إلا في تصنيف `PORTFOLIO` (عند الإنشاء **والتعديل**، في الاتجاهين) وإلا `CATEGORY_SCOPE_MISMATCH` (400). عنصر معرض **بلا تصنيف** يبقى صالحًا ويظهر في القائمة غير المفلترة. تغيير نطاق تصنيف مستخدم `CATEGORY_SCOPE_IN_USE` (409).
+  - قاعدة الأب/الابن محفوظة في القاعدة نفسها: `UNIQUE (id, scope)` و`FOREIGN KEY (parent_id, scope)` (V21)، لا في كود الخدمة وحده.
+  - **`slug` التصنيف فريد عبر النطاقين** (`uq_cat_slug` لم يُمسّ): «أبواب» معرض بجانب «أبواب» متجر يصير `أبواب-2`. تجميلي ونادر عمدًا، ولو جُعل الفريد `(slug, scope)` لصار `findBySlug` ملتبسًا بين النطاقين.
 
 المصدر: `src/main/java/com/velora/api/customrequest/service/CustomRequestService.java:106-171` · `src/main/java/com/velora/api/customrequest/web/CustomRequestController.java` · `src/main/java/com/velora/api/portfolio/service/PortfolioAdminService.java:89-116,120-132` · `src/main/java/com/velora/api/portfolio/web/PortfolioController.java`
 
@@ -500,6 +506,7 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 | `GET /brands` | العلامات الفعّالة | — | قائمة مرتبة بـ`nameAr` | غير مرقّمة |
 | `GET /variants/{id}/availability` | توفر متغيّر الآن | — | `{variantId, sku, price, availableQty, inStock, sellable}` | `VARIANT_NOT_FOUND` 404. **يكشف الكمية المتاحة الدقيقة للعامة.** |
 | `GET /portfolio` ، `GET /portfolio/{slug}` | معرض الأعمال المنشورة | `categoryId?`, `page`,`size`(12) | `PageResponse<PortfolioSummaryResponse>` / `PortfolioDetailResponse` | 404 لغير منشور/مؤرشف/مجهول |
+| `GET /portfolio/categories` | تصنيفات المعرض (فلتر الصفحة) | — | قائمة مسطّحة `[{id,slug,name,imageUrl,displayOrder}]` | تصنيفات `PORTFOLIO` الفعّالة فقط. عنصر بلا تصنيف يظهر في القائمة غير المفلترة وحدها. `categories` **slug محجوز** لعناصر المعرض (`SLUG_RESERVED` 400 عند الإنشاء/التعديل برسالة تشرح السبب)؛ والـ slug المولَّد من العنوان إن جاء `categories` يأخذ `categories-2`. أي مسار ثابت يُضاف تحت `/portfolio` يجب إضافته إلى `PortfolioAdminService.RESERVED_SLUGS` وإلا فشل اختبار `PortfolioReservedSlugIntegrationTest` |
 | `GET /geo/governorates` | المحافظات الـ27 وشروط الشحن | — | قائمة `GovernorateResponse{id, code, name, zoneName, shippingRates[{sizeClass, unitCost}], maxShippingCost, deliveryDaysMin/Max, served}` | غير مرقّمة؛ المحافظة غير المخدومة تعود `served:false` |
 | `GET /ping` | حيوية | — | `{status:"ok", service:"velora-api", time}` | اسم الخدمة ثابت في الكود |
 | `GET /uploads/**` | ملفات مرفوعة | — | الملف | كاش 30 يومًا. عام لـ`products/` و`categories/` و`portfolio/` و`custom-requests/` (الأخير قرار مقصود، 7.5). **`/uploads/invoices/**` مغلق** (401/403). **ملف غير موجود تحت `/uploads/` يعيد 500 لا 404** (7.5). |
@@ -617,7 +624,7 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 | `POST /admin/products/{productId}/variants/preview` | معاينة مصفوفة المتغيّرات | `selections[{attributeId*, valueIds*}]` → `VariantMatrixPreviewResponse` بلا حفظ |
 | `POST /admin/products/{productId}/variants` | إنشاء/تعديل متغيّرات | `variants[{id?, sku, barcode, price*, compareAtPrice, costPrice, taxRate, weightGrams, attributeValueIds, initialStock, minStockLevel}]` → قائمة `VariantAdminResponse`؛ **`id` موجود = تعديل بـ POST** (4.4)؛ الكومبينيشن الموجود يُتخطى بصمت |
 | `DELETE /admin/variants/{variantId}` | أرشفة متغيّر | 204 |
-| `GET /admin/categories` ، `POST` ، `PUT /{id}` ، `POST /{id}/images?imageType=CARD` (أو `BANNER`) (multipart `file`) ، `DELETE /{id}/images/{imageType}` | التصنيفات | الإنشاء 201 `{id}`؛ التعديل `{id}`؛ **استبدال كامل** (4.4) |
+| `GET /admin/categories` ، `POST` ، `PUT /{id}` ، `POST /{id}/images?imageType=CARD` (أو `BANNER`) (multipart `file`) ، `DELETE /{id}/images/{imageType}` | التصنيفات | الإنشاء 201 `{id}`؛ التعديل `{id}`؛ **استبدال كامل** (4.4) **ما عدا `scope`** (غيابه = بلا تغيير). `GET ?scope=PRODUCT\|PORTFOLIO` (اختياري؛ غيره `INVALID_PARAMETER` 400) وكل عقدة تحمل `scope`؛ `scope` في الجسم اختياري (إنشاء: `PRODUCT` أو نطاق الأب). أخطاء: `CATEGORY_SCOPE_MISMATCH` 400، `CATEGORY_SCOPE_IN_USE` 409 |
 | `GET /admin/brands` ، `POST` ، `PUT /{id}` | العلامات | `nameAr*` `nameEn*` `logoUrl`(نص رابط لا رفع) `slug` `active` |
 | `GET /admin/attributes?variantDefining=` ، `POST` ، `PUT /{id}` | الخصائص وقيمها | **استبدال** (4.4)؛ `code` UPPER_SNAKE |
 
@@ -657,13 +664,20 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 | النقطة | ما يُمسح عند الإغفال | ما يبقى كما هو عند الإغفال |
 |---|---|---|
 | **`PUT /admin/products/{id}`** | `brandId` (المنتج يفقد علامته)؛ `featured` و`newArrival` (تصيران `false`)؛ داخل كل ترجمة مُرسلة: `shortDescription`, `description`, `metaTitle`, `metaDescription` (تصير `null`) ويُعاد حساب `search_text`؛ **أي لغة غير مذكورة في `translations` تُحذف** (إن أُرسلت `translations` غير فارغة)؛ **`specifications` المُرسلة (حتى القائمة الفارغة `[]`) تحذف كل مواصفة غير مذكورة** | `translations` غائبة أو `[]` ⇒ بلا تغيير؛ `specifications` غائبة (`null`) ⇒ بلا تغيير؛ `slug`, `fulfillmentType`, `shippingSizeClass`, `requiresAssembly`, `assemblyFee` ⇒ بلا تغيير. `categoryId` إلزامي. |
-| **`PUT /admin/categories/{id}`** | `parentId` ⇒ **ينتقل إلى الجذر**؛ في كل ترجمة: `description`, `metaTitle`, `metaDescription`؛ لغات غير مذكورة تُحذف | `slug`, `displayOrder`, `active` ⇒ بلا تغيير |
+| **`PUT /admin/categories/{id}`** | `parentId` ⇒ **ينتقل إلى الجذر**؛ في كل ترجمة: `description`, `metaTitle`, `metaDescription`؛ لغات غير مذكورة تُحذف | `slug`, `displayOrder`, `active` ⇒ بلا تغيير. **`scope` ⇒ بلا تغيير (الاستثناء الوحيد، انظر الصندوق أدناه)** |
 | **`PUT /admin/brands/{id}`** | `logoUrl` | `slug`, `active`. `nameAr` و`nameEn` إلزاميان |
 | **`PUT /admin/attributes/{id}`** | `dataType` ⇒ **يعود `LIST`**؛ `filterable` ⇒ `false`؛ `variantDefining` ⇒ `false` (يُرفض `ATTRIBUTE_IN_USE` إن اختلف عن المخزَّن)؛ ترجمات الاسم غير المذكورة تُحذف؛ لكل قيمة مُرسلة: `hexColor` (تُمسح) وترجمات القيمة غير المذكورة (تُحذف) | `displayOrder` للخاصية و`displayOrder` لكل قيمة ⇒ بلا تغيير؛ `values` غائبة ⇒ لا تغيير; **قيمة غير مذكورة في `values` لا تُحذف أبدًا** (تُحدَّث المذكورة بمطابقة `id` فقط، وقيمة بلا `id` تُنشأ جديدة، فإن تكرر `code` موجود فشلت بـ`ATTRIBUTE_VALUE_CODE_EXISTS`/`DUPLICATE_VALUE`) |
 | **`PUT /admin/settings/store-profile`** | **كل** الحقول عدا `legalName`: `legalNameEn, address, phone, email, taxNumber, commercialRegister, website, invoiceFooterNote` (القيمة الفارغة تُخزَّن `null`) | — |
 | **`PUT /admin/portfolio/{id}`** | `titleEn`, `descriptionAr`, `descriptionEn`, `categoryId`, `completedAt` | `slug`, `displayOrder`. `titleAr` إلزامي |
 | **`PUT /me/addresses/{addressId}`** | `label`, `altPhone`, `area`, `building`, `floor`, `apartment`, `landmark` | `makeDefault` غائب ⇒ لا يُلغي الافتراضي. `recipientName`, `phone`, `governorateId`, `streetAddress` إلزامية |
 | **`POST /admin/products/{productId}/variants` مع `id`** (تعديل) | `barcode`, `compareAtPrice`, `costPrice` (`null`)؛ `price` إلزامي | `sku`, `taxRate`, `weightGrams`؛ و`attributeValueIds`, `initialStock`, `minStockLevel` **تُتجاهل كليًا عند التعديل** (لا يمكن تعديل المخزون ولا الخصائص من هنا) |
+
+> ### ⚠ استثناء وحيد من الاستبدال الكامل: `scope` التصنيف
+> كل حقول `PUT /admin/categories/{id}` تُستبدل استبدالًا كاملًا (الغائب `parentId` ينقل التصنيف إلى الجذر، والترجمات غير المذكورة تُحذف)، **إلا `scope`: غيابه أو `null` يعني «بلا تغيير».**
+>
+> **السبب:** لو عنى الغياب «أعد إلى `PRODUCT`» لتحوّل تصنيف معرض بصمت إلى تصنيف منتجات عند أي عميل لا يُرسل الحقل بعد (فورم قديم، سكربت)، فيظهر في قائمة المتجر ولا يلاحظ أحد حتى يفتح عميل تصنيفًا فارغًا. أما «بلا تغيير» فمن ينسى الحقل لا يغيّر شيئًا — يفشل آمنًا بدل أن يفشل صامتًا وضارًّا.
+>
+> فلا تفترض أن `scope` يتصرف كبقية الحقول، ولا «تصلحه» ليطابقها. لتغيير النطاق أرسل القيمة الجديدة صراحةً؛ ويُرفض بـ`CATEGORY_SCOPE_IN_USE` (409) ما دام للتصنيف أولاد أو منتجات أو عناصر معرض (المؤرشفة تُحسب). المنفِّذ: `TaxonomyAdminService.applyScope` وفوقه تعليق بنفس الشرح.
 
 نقاط `PUT` **ليست** استبدالًا ماسحًا: `PUT /admin/shipping/rates` (الحقول الاختيارية الثلاثة `null` = بلا تغيير)، `PUT /admin/shipping/governorates/{id}/zone` و`PUT /me/addresses/{id}/default` (بلا حقول اختيارية)، `PUT /admin/shipping/zones/{zoneId}/max-shipping-cost` (الحقل وحده؛ `null` = إزالة السقف وهو المقصود)، `PUT /admin/products/{id}/images/{imageId}` (دمج: `null` = بلا تغيير — أي **لا يمكن** مسح نص بديل أو فك ربط الصورة بمتغيّر رغم أن الوصف يقول إن `variantId = null` يعني "مشتركة").
 

@@ -1,6 +1,7 @@
 package com.velora.api.catalog.web.admin;
 
 import com.velora.api.catalog.domain.CategoryImageType;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.dto.admin.AttributeAdminResponse;
 import com.velora.api.catalog.dto.admin.AttributeSaveRequest;
 import com.velora.api.catalog.dto.admin.BrandAdminResponse;
@@ -8,6 +9,7 @@ import com.velora.api.catalog.dto.admin.BrandSaveRequest;
 import com.velora.api.catalog.dto.admin.CategoryAdminResponse;
 import com.velora.api.catalog.dto.admin.CategorySaveRequest;
 import com.velora.api.catalog.service.admin.TaxonomyAdminService;
+import com.velora.api.common.util.EnumParam;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,8 +50,14 @@ public class AdminTaxonomyController {
                     + "translations[] and active flag — load a node straight into the "
                     + "edit form and send it back whole.")
     @GetMapping("/categories")
-    public List<CategoryAdminResponse> listCategories() {
-        return taxonomyService.getCategoryTree();
+    public List<CategoryAdminResponse> listCategories(
+            @io.swagger.v3.oas.annotations.Parameter(description = "PRODUCT or PORTFOLIO. Omit for "
+                    + "both; every node carries its own scope. The product form asks for PRODUCT, "
+                    + "the portfolio form for PORTFOLIO.")
+            @RequestParam(required = false) String scope) {
+        return taxonomyService.getCategoryTree(
+                scope == null || scope.isBlank() ? null
+                        : EnumParam.parse(CategoryScope.class, scope, "scope"));
     }
 
     @Operation(summary = "Create a category")

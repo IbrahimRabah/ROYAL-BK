@@ -2,6 +2,7 @@ package com.velora.api.portfolio.web;
 
 import com.velora.api.catalog.web.LocaleResolver;
 import com.velora.api.common.dto.PageResponse;
+import com.velora.api.portfolio.dto.PortfolioCategoryResponse;
 import com.velora.api.portfolio.dto.PortfolioDetailResponse;
 import com.velora.api.portfolio.dto.PortfolioSummaryResponse;
 import com.velora.api.portfolio.service.PortfolioQueryService;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -39,6 +41,17 @@ public class PortfolioController {
             @ParameterObject @PageableDefault(size = 12) Pageable pageable,
             HttpServletRequest request) {
         return queryService.list(categoryId, pageable, LocaleResolver.resolve(request));
+    }
+
+    @Operation(summary = "The portfolio's categories",
+            description = "PORTFOLIO-scope categories only, flat, in display order. Pass an id as "
+                    + "`categoryId` to GET /portfolio to filter. Items with no category appear in "
+                    + "the unfiltered list and in none of these. The slug \"categories\" is reserved "
+                    + "for this path: no portfolio item can have it (SLUG_RESERVED).",
+            security = {})
+    @GetMapping("/categories")
+    public List<PortfolioCategoryResponse> categories(HttpServletRequest request) {
+        return queryService.categories(LocaleResolver.resolve(request));
     }
 
     @Operation(summary = "One portfolio item by slug",

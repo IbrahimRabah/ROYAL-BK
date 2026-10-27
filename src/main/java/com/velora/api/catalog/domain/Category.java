@@ -3,6 +3,8 @@ package com.velora.api.catalog.domain;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -56,6 +58,14 @@ public class Category {
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
+
+    /**
+     * What the category is for. PRODUCT unless said otherwise - the default every existing row and
+     * every {@code new Category()} gets, so nothing leaves the shop menu by accident.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scope", nullable = false, length = 20)
+    private CategoryScope scope = CategoryScope.PRODUCT;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);

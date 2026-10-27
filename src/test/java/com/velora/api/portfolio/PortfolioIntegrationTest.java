@@ -17,6 +17,7 @@ import com.velora.api.audit.domain.AuditAction;
 import com.velora.api.audit.domain.AuditLog;
 import com.velora.api.audit.repository.AuditLogRepository;
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.storage.StorageService;
 import com.velora.api.identity.security.UserPrincipal;
@@ -74,6 +75,7 @@ class PortfolioIntegrationTest {
         tag = UUID.randomUUID().toString().substring(0, 8);
         Category category = new Category();
         category.setSlug("portfolio-cat-" + tag);
+        category.setScope(CategoryScope.PORTFOLIO);   // a portfolio item goes in a PORTFOLIO category
         category.setActive(false);
         categoryId = categoryRepository.save(category).getId();
     }

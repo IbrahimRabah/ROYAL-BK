@@ -25,6 +25,9 @@ public interface ProductRepository
 
     boolean existsBySlug(String slug);
 
+    /** Archived products count too: they still reference their category. */
+    boolean existsByCategoryId(Long categoryId);
+
     /** Every row counts, archived or not: uq_prod_slug covers them all. */
     boolean existsBySlugAndIdNot(String slug, Long id);
 

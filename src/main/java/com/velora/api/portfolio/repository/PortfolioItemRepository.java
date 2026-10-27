@@ -15,6 +15,9 @@ public interface PortfolioItemRepository extends JpaRepository<PortfolioItem, Lo
 
     boolean existsBySlugAndIdNot(String slug, Long id);
 
+    /** Archived items count too: they still reference their category. */
+    boolean existsByCategoryId(Long categoryId);
+
     Optional<PortfolioItem> findBySlugAndPublishedTrueAndArchivedAtIsNull(String slug);
 
     @Query("""

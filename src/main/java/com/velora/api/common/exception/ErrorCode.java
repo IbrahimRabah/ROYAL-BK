@@ -62,6 +62,7 @@ public enum ErrorCode {
     SKU_ALREADY_EXISTS("This SKU is already in use", HttpStatus.CONFLICT),
     BARCODE_ALREADY_EXISTS("This barcode is already in use", HttpStatus.CONFLICT),
     SLUG_ALREADY_EXISTS("This URL slug is already in use", HttpStatus.CONFLICT),
+    SLUG_RESERVED("This URL slug is reserved by the system and cannot be used", HttpStatus.BAD_REQUEST),
     VARIANT_COMBINATION_EXISTS("A variant with this combination already exists",
             HttpStatus.CONFLICT),
 
@@ -70,6 +71,11 @@ public enum ErrorCode {
     CATEGORY_NOT_EMPTY("Move or archive the products in this category first",
             HttpStatus.CONFLICT),
     CATEGORY_CYCLE("A category cannot be its own parent", HttpStatus.BAD_REQUEST),
+    CATEGORY_SCOPE_MISMATCH("The category's scope does not fit: a child shares its parent's scope, "
+            + "a product goes in a PRODUCT category, a portfolio item in a PORTFOLIO one",
+            HttpStatus.BAD_REQUEST),
+    CATEGORY_SCOPE_IN_USE("A category with children, products or portfolio items cannot change scope",
+            HttpStatus.CONFLICT),
     BRAND_NOT_FOUND("Brand not found", HttpStatus.NOT_FOUND),
     BRAND_SLUG_EXISTS("A brand with this URL slug already exists", HttpStatus.CONFLICT),
     ATTRIBUTE_NOT_FOUND("Attribute not found", HttpStatus.NOT_FOUND),

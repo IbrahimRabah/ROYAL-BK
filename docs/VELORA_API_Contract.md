@@ -543,6 +543,8 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 #### `GET /api/v1/categories/tree`
 **Summary:** Full category tree for the header mega-menu, built recursively from one flat query (max depth guard: 5 levels).
 
+**Only `PRODUCT` categories.** A category has a `scope` (`PRODUCT` or `PORTFOLIO`); a `PORTFOLIO` category (doors, windows, stairs — the portfolio's own) never appears here, in `GET /categories/{slug}`, or in any product filter. The tree is **not** filtered by product count: an empty `PRODUCT` category stays listed on purpose (the client wants to see the whole structure before filling it) — only `active` and `scope` decide visibility.
+
 `imageUrl`/`bannerUrl` are built at read time from the uploaded image's storage key (see `POST /admin/categories/{id}/images` below) — `null` when no image of that type has been uploaded yet.
 
 **Success response `200`:**
@@ -577,7 +579,7 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 }
 ```
 
-**Error responses:** `404 RESOURCE_NOT_FOUND` — note the service uses the generic code here, not the more specific `CATEGORY_NOT_FOUND` that exists in the catalog.
+**Error responses:** `404 RESOURCE_NOT_FOUND` — note the service uses the generic code here, not the more specific `CATEGORY_NOT_FOUND` that exists in the catalog. The same `404` answers the slug of a `PORTFOLIO` category: it is not a shop category, so it is indistinguishable from an unknown slug.
 
 ---
 
@@ -684,6 +686,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 |---|---|---|
 | 400 | VALIDATION_FAILED | Missing/invalid fields, or no `slug` derivable (non-Latin names only, no `slug` override) |
 | 404 | CATEGORY_NOT_FOUND | `categoryId` does not exist |
+| 400 | CATEGORY_SCOPE_MISMATCH | `categoryId` is a `PORTFOLIO` category — a product goes in a `PRODUCT` one (same on update) |
 | 404 | BRAND_NOT_FOUND | `brandId` given but does not exist |
 
 ---
@@ -699,7 +702,7 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 
 **Success response `200`:** `ProductAdminResponse`.
 
-**Error responses:** `404 PRODUCT_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `404 BRAND_NOT_FOUND`, `400 VALIDATION_FAILED`.
+**Error responses:** `404 PRODUCT_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `400 CATEGORY_SCOPE_MISMATCH` (`categoryId` is a `PORTFOLIO` category), `404 BRAND_NOT_FOUND`, `400 VALIDATION_FAILED`.
 
 ---
 
@@ -897,16 +900,18 @@ Two independent warnings can appear: `"The selection produces %d combinations. S
 #### `GET /api/v1/admin/categories`
 **Summary:** Full category tree, including inactive categories — same shape as the storefront `GET /api/v1/categories/tree`, but staff need to see what was turned off in order to turn it back on. Response language follows `Accept-Language` (`ar` default), same as the storefront tree.
 
+**Query params:** `scope` (optional) — `PRODUCT` or `PORTFOLIO`. Omit it for both; every node carries its own `scope`. The product form asks for `PRODUCT`, the portfolio form for `PORTFOLIO`. Anything else is `400 INVALID_PARAMETER`.
+
 **Success response `200`:**
 ```json
 [
   {
-    "id": 1, "slug": "watches",
+    "id": 1, "slug": "watches", "scope": "PRODUCT",
     "translations": [ { "locale": "ar", "name": "ساعات", "description": null, "metaTitle": null, "metaDescription": null } ],
     "imageUrl": "http://localhost:8080/uploads/categories/2026/09/3f2a1b9c8e7d4a5b.jpg", "bannerUrl": "http://localhost:8080/uploads/categories/2026/09/9e1d4a5b3f2a1b9c.jpg",
     "displayOrder": 1, "active": true, "productCount": 42,
     "children": [
-      { "id": 4, "slug": "discontinued-line", "translations": [ { "locale": "ar", "name": "خط موقوف", "description": null, "metaTitle": null, "metaDescription": null } ], "imageUrl": null, "bannerUrl": null, "displayOrder": 1, "active": false, "productCount": 0, "children": [] }
+      { "id": 4, "slug": "discontinued-line", "scope": "PRODUCT", "translations": [ { "locale": "ar", "name": "خط موقوف", "description": null, "metaTitle": null, "metaDescription": null } ], "imageUrl": null, "bannerUrl": null, "displayOrder": 1, "active": false, "productCount": 0, "children": [] }
     ]
   }
 ]
@@ -928,16 +933,20 @@ Unlike the storefront tree, every node carries `active` and the full `translatio
     { "locale": "ar", "name": "ساعات رجالية", "shortDescription": null, "description": null, "metaTitle": null, "metaDescription": null },
     { "locale": "en", "name": "Men's Watches", "shortDescription": null, "description": null, "metaTitle": null, "metaDescription": null }
   ],
-  "displayOrder": 1, "active": true
+  "displayOrder": 1, "active": true,
+  "scope": "PRODUCT"
 }
 ```
+`scope` is optional: `PRODUCT` or `PORTFOLIO`. Omitted on create it is `PRODUCT` — or the parent's scope when a `parentId` is given, since a child cannot have any other. A `PORTFOLIO` category is for the portfolio only (see `GET /api/v1/portfolio/categories`): it never appears in the shop navigation.
 
 **Success response `201`:**
 ```json
 { "id": 12 }
 ```
 
-**Error responses:** `404 CATEGORY_NOT_FOUND` (`parentId` doesn't exist), `409 SLUG_ALREADY_EXISTS` (rare dedup race).
+**Error responses:** `404 CATEGORY_NOT_FOUND` (`parentId` doesn't exist), `400 CATEGORY_SCOPE_MISMATCH` (`scope` differs from the parent's — a child always shares its parent's scope), `409 SLUG_ALREADY_EXISTS` (rare dedup race).
+
+**Slugs are unique across both scopes.** A portfolio "أبواب" next to a shop "أبواب" takes `-2`. That is deliberate and cosmetic: scoping the slug would make `findBySlug` ambiguous.
 
 ---
 
@@ -946,12 +955,19 @@ Unlike the storefront tree, every node carries `active` and the full `translatio
 
 **Request body:** same shape as create.
 
+> ### ⚠ `scope` is the ONE field that is NOT replaced wholesale
+> Everything else on this `PUT` is full-replace: an omitted `parentId` moves the category to the root, omitted translations are deleted, and so on. **`scope` is the exception: omitted (or `null`) means "no change".**
+>
+> **Why:** if an omitted `scope` meant "reset to `PRODUCT`", any client that does not send it yet — an older form, a script — would silently turn a `PORTFOLIO` category into a product category. It would then appear in the shop navigation and nobody would notice until a customer clicked an empty category. Treated as "no change", a client that forgets the field changes nothing at all. Fail safe beats fail silent.
+>
+> Do not assume `scope` behaves like the other fields, and do not "fix" it to match them. To change a category's scope send the new value explicitly — allowed only while the category has no children, no products and no portfolio items (`409 CATEGORY_SCOPE_IN_USE`).
+
 **Success response `200`:**
 ```json
 { "id": 12 }
 ```
 
-**Error responses:** `404 CATEGORY_NOT_FOUND`, `400 CATEGORY_CYCLE` (`parentId` equals own id), `409 SLUG_ALREADY_EXISTS`.
+**Error responses:** `404 CATEGORY_NOT_FOUND`, `400 CATEGORY_CYCLE` (`parentId` equals own id), `400 CATEGORY_SCOPE_MISMATCH` (the new `parentId` has a different scope than the category), `409 CATEGORY_SCOPE_IN_USE` (`scope` changed on a category that has children, products or portfolio items — archived ones count), `409 SLUG_ALREADY_EXISTS`.
 
 > `409 CATEGORY_NOT_EMPTY` exists in the error catalog for blocking removal of a non-empty category, but no delete endpoint is exposed here — categories are only created/updated.
 
@@ -2405,6 +2421,21 @@ Finished custom work shown on the storefront. **A separate entity, not products 
 
 ---
 
+#### `GET /api/v1/portfolio/categories`
+**Auth:** Public — no token.
+**Summary:** The portfolio's own categories for its filter: `PORTFOLIO`-scope, active, **flat** (one level is what the business needs; it becomes a tree if they ever nest), in `displayOrder`. Product categories never appear here. Names follow `Accept-Language`.
+
+**Success response `200`:**
+```json
+[
+  { "id": 31, "slug": "doors", "name": "أبواب", "imageUrl": null, "displayOrder": 0 },
+  { "id": 32, "slug": "stairs", "name": "سلالم", "imageUrl": "https://cdn.velora.com/uploads/categories/2026/10/a1b2.jpg", "displayOrder": 1 }
+]
+```
+Pass an `id` as `categoryId` to `GET /api/v1/portfolio`. An item **with no category** is listed by the unfiltered `GET /api/v1/portfolio` and by none of these filters. **`categories` is a reserved slug:** no portfolio item can have it, because `/portfolio/categories` is this list and an item with that slug could never be opened. Create/update with it fails with `400 SLUG_RESERVED` and a message saying why; a slug *generated* from a title that comes out as `categories` takes the next suffix (`categories-2`) like a taken one. Any fixed path added under `/portfolio` later is added to the reserved set (a test fails until it is).
+
+---
+
 #### `GET /api/v1/portfolio/{slug}`
 **Auth:** Public — no token.
 **Summary:** One item with all its images, in display order.
@@ -2487,7 +2518,9 @@ All routes require `ROLE_ADMIN` (`403` otherwise).
 **Summary:** Replace an item's content. **Send the whole form back:** `titleEn`, `descriptionAr`, `descriptionEn`, `categoryId` and `completedAt` are **cleared when omitted**. `slug` and `displayOrder` are kept when omitted. Does not change `published` or `archivedAt` and works on an archived item too.
 
 **Request body:** same fields as create. **Success response `200`:** `PortfolioAdminResponse`.
-**Errors:** `400 VALIDATION_FAILED`, `404 PORTFOLIO_ITEM_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `409 SLUG_ALREADY_EXISTS` (a different `slug` that another item uses).
+**Errors:** `400 VALIDATION_FAILED`, `404 PORTFOLIO_ITEM_NOT_FOUND`, `404 CATEGORY_NOT_FOUND`, `400 CATEGORY_SCOPE_MISMATCH` (`categoryId` is a `PRODUCT` category — a portfolio item goes in a `PORTFOLIO` one; same on create and update), `400 SLUG_RESERVED` (`slug` is `categories`, which is a fixed path under `/portfolio`), `409 SLUG_ALREADY_EXISTS` (a different `slug` that another item uses).
+
+> `categoryId` is optional and `null` is valid: an item with no category stays valid, listed and editable. `PUT` is full-replace, so re-saving an item that still points at a product category fails with `CATEGORY_SCOPE_MISMATCH` until it is moved to a `PORTFOLIO` category (or to none).
 
 ---
 

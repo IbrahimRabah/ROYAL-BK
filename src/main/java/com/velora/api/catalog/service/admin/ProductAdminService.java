@@ -5,6 +5,7 @@ import com.velora.api.catalog.domain.AttributeDataType;
 import com.velora.api.catalog.domain.AttributeValue;
 import com.velora.api.catalog.domain.Brand;
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductAttributeValue;
 import com.velora.api.catalog.domain.ProductStatus;
@@ -425,10 +426,17 @@ public class ProductAdminService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
     }
 
+    /** Used by create AND update: a product only ever sits in a PRODUCT category. */
     private Category loadCategory(Long id) {
-        return categoryRepository.findById(id)
+        Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND,
                         "Category not found: " + id));
+        if (category.getScope() != CategoryScope.PRODUCT) {
+            throw new BusinessException(ErrorCode.CATEGORY_SCOPE_MISMATCH,
+                    "Category " + id + " is a " + category.getScope()
+                            + " category; a product goes in a PRODUCT category");
+        }
+        return category;
     }
 
     private Brand loadBrand(Long id) {

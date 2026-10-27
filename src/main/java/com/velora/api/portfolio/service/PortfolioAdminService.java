@@ -3,6 +3,7 @@ package com.velora.api.portfolio.service;
 import com.velora.api.audit.domain.AuditAction;
 import com.velora.api.audit.service.AuditService;
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.repository.CategoryRepository;
 import com.velora.api.common.dto.PageResponse;
 import com.velora.api.common.exception.BusinessException;
@@ -16,6 +17,7 @@ import com.velora.api.portfolio.mapper.PortfolioMapper;
 import com.velora.api.portfolio.repository.PortfolioItemRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -93,6 +95,7 @@ public class PortfolioAdminService {
         if (requested != null && !requested.isBlank()) {
             String slug = normalizeSlug(requested);
             if (!slug.equals(item.getSlug())) {
+                rejectIfReserved(slug);
                 if (repository.existsBySlugAndIdNot(slug, id)) {
                     throw new BusinessException(ErrorCode.SLUG_ALREADY_EXISTS);
                 }
@@ -194,6 +197,7 @@ public class PortfolioAdminService {
     private String newSlug(String requested, String titleAr, String titleEn) {
         if (requested != null && !requested.isBlank()) {
             String slug = normalizeSlug(requested);
+            rejectIfReserved(slug);
             if (repository.existsBySlug(slug)) {
                 throw new BusinessException(ErrorCode.SLUG_ALREADY_EXISTS);
             }
@@ -206,9 +210,30 @@ public class PortfolioAdminService {
         if (base == null) {
             throw slugNotDerivable();
         }
+        // A generated slug that lands on a reserved word is not an error the admin caused: it
+        // simply takes the next free suffix, the way a taken slug does ("categories-2").
         String unique = SlugGenerator.generateUnique(cut(base, SLUG_BASE_MAX),
-                candidate -> !repository.existsBySlug(candidate));
+                candidate -> !repository.existsBySlug(candidate)
+                        && !RESERVED_SLUGS.contains(candidate));
         return cut(unique, SLUG_MAX);
+    }
+
+    /**
+     * Slugs that would be shadowed by a fixed path under {@code /portfolio}. An item called
+     * "categories" would be unreachable at {@code /portfolio/categories}, which is the category
+     * list, and the person who made it would see an item that cannot be opened and no reason why.
+     * Kept in step with the controller's literal paths by {@code PortfolioReservedSlugIntegrationTest},
+     * which fails when a new fixed path appears here without being added to this set.
+     */
+    public static final Set<String> RESERVED_SLUGS = Set.of("categories");
+
+    private static void rejectIfReserved(String slug) {
+        if (RESERVED_SLUGS.contains(slug)) {
+            throw new BusinessException(ErrorCode.SLUG_RESERVED,
+                    "'" + slug + "' is reserved: /portfolio/" + slug + " is a fixed page of the "
+                            + "portfolio, so an item with this slug could never be opened. "
+                            + "Choose another slug.");
+        }
     }
 
     private String normalizeSlug(String requested) {
@@ -235,8 +260,16 @@ public class PortfolioAdminService {
         if (categoryId == null) {
             return null;
         }
-        return categoryRepository.findById(categoryId)
+        Category category = categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+        // Used by create AND update: a portfolio item only ever sits in a PORTFOLIO category.
+        // No category at all stays valid - a null here returns above.
+        if (category.getScope() != CategoryScope.PORTFOLIO) {
+            throw new BusinessException(ErrorCode.CATEGORY_SCOPE_MISMATCH,
+                    "Category " + categoryId + " is a " + category.getScope()
+                            + " category; a portfolio item goes in a PORTFOLIO category");
+        }
+        return category;
     }
 
     private PortfolioItem load(Long id) {

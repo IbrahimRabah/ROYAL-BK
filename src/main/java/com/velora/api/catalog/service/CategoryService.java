@@ -1,6 +1,7 @@
 package com.velora.api.catalog.service;
 
 import com.velora.api.catalog.domain.Category;
+import com.velora.api.catalog.domain.CategoryScope;
 import com.velora.api.catalog.domain.CategoryTranslation;
 import com.velora.api.catalog.dto.CategoryDetailResponse;
 import com.velora.api.catalog.dto.CategoryTreeResponse;
@@ -40,7 +41,11 @@ public class CategoryService {
      * Fetch it flat, assemble it here, and cache the result.
      */
     public List<CategoryTreeResponse> getTree(String locale) {
-        List<Category> all = categoryRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc();
+        // Scope is the only visibility rule besides "active". Deliberately NO condition on
+        // productCount: the client wants to see the whole PRODUCT structure before filling it,
+        // so an empty product category stays. A PORTFOLIO category never reaches the shop.
+        List<Category> all = categoryRepository
+                .findByScopeAndActiveTrueOrderByDisplayOrderAscIdAsc(CategoryScope.PRODUCT);
 
         Map<Long, List<Category>> byParent = all.stream()
                 .filter(c -> c.getParent() != null)
@@ -54,12 +59,15 @@ public class CategoryService {
     }
 
     public CategoryDetailResponse findBySlug(String slug, String locale) {
-        Category category = categoryRepository.findBySlugAndActiveTrue(slug)
+        // A PORTFOLIO category's slug is "not found" here, the same answer as an unknown slug.
+        Category category = categoryRepository
+                .findBySlugAndScopeAndActiveTrue(slug, CategoryScope.PRODUCT)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND,
                         "Category not found"));
 
         List<CategoryTreeResponse> children = categoryRepository
-                .findByParentIdAndActiveTrueOrderByDisplayOrderAsc(category.getId())
+                .findByParentIdAndScopeAndActiveTrueOrderByDisplayOrderAsc(
+                        category.getId(), CategoryScope.PRODUCT)
                 .stream()
                 .map(child -> mapper.toTreeNode(child, locale, List.of()))
                 .toList();
