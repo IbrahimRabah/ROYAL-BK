@@ -47,6 +47,16 @@ public enum AuditAction {
     CUSTOM_REQUEST_QUOTED,
 
     /**
+     * THE CUSTOMER accepted their own quote, from their account. Not a staff action: the actor is
+     * the customer's user id and name. (A phone acceptance recorded by staff is
+     * CUSTOM_REQUEST_STATUS_CHANGED.) oldValue / newValue are the statuses.
+     */
+    CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER,
+
+    /** THE CUSTOMER rejected their own quote, from their account. See ..._ACCEPTED_BY_CUSTOMER. */
+    CUSTOM_REQUEST_REJECTED_BY_CUSTOMER,
+
+    /**
      * A delivery appointment was set or moved. It is a commitment made to the customer, and
      * the order only keeps the latest one: oldValue / newValue are the appointments
      * (ISO-8601, empty for the first) and the reason is the staff note.
@@ -75,5 +85,16 @@ public enum AuditAction {
     PERMISSION_CHANGED,
 
     /** Seller legal details changed — these end up printed on invoices. */
-    STORE_PROFILE_CHANGED
+    STORE_PROFILE_CHANGED;
+
+    /**
+     * Whether a CUSTOMER, not a member of staff, performed this. Every other action is staff or
+     * the system. The log shows an actor's name, which cannot tell the two apart, so a screen that
+     * renders "X accepted the quote" must read this (see AuditLogResponse.actorKind) instead of
+     * assuming the name belongs to staff.
+     */
+    public boolean performedByCustomer() {
+        return this == CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER
+                || this == CUSTOM_REQUEST_REJECTED_BY_CUSTOMER;
+    }
 }

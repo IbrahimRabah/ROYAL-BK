@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Records staff actions.
+ * Records staff actions, and the few decisions a customer makes on their own account (see
+ * {@link AuditAction#performedByCustomer()}); every response says which kind of actor it was.
  *
  * <p>Writes run in {@code REQUIRES_NEW}: an audit entry commits on its own, so a
  * later failure in the business transaction cannot erase the record that someone
@@ -146,10 +147,27 @@ public class AuditService {
                 entry.getReason(),
                 entry.getActorId(),
                 entry.getActorName(),
+                actorKind(entry),
                 entry.getCreatedAt());
     }
 
-    /** Used by the dashboard to show recent activity. */
+    /**
+     * The kind of actor behind an entry. Derived from the action, not stored, so no migration and
+     * old rows read correctly: a customer's decision is its own action, and a null actor is the
+     * system.
+     */
+    private static String actorKind(AuditLog entry) {
+        if (entry.getAction().performedByCustomer()) {
+            return "CUSTOMER";
+        }
+        return entry.getActorId() == null ? "SYSTEM" : "STAFF";
+    }
+
+    /**
+     * The newest entries. NOTHING calls this today - the dashboard does not read the audit log
+     * (it has its own queues); the audit log is read through GET /admin/audit. Kept for a
+     * recent-activity panel, which must show {@code actorKind} if it is ever built.
+     */
     @Transactional(readOnly = true)
     public Page<AuditLog> recent(Pageable pageable) {
         return auditLogRepository.findAllByOrderByCreatedAtDesc(pageable);

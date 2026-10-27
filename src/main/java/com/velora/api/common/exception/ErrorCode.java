@@ -74,6 +74,10 @@ public enum ErrorCode {
     CATEGORY_SCOPE_MISMATCH("The category's scope does not fit: a child shares its parent's scope, "
             + "a product goes in a PRODUCT category, a portfolio item in a PORTFOLIO one",
             HttpStatus.BAD_REQUEST),
+    QUOTE_ALREADY_ANSWERED("This quote was already answered, so it cannot be answered the other way",
+            HttpStatus.CONFLICT),
+    QUOTE_CHANGED("The quote changed after you saw it. Reload the request to see the new price",
+            HttpStatus.CONFLICT),
     CATEGORY_SCOPE_IN_USE("A category with children, products or portfolio items cannot change scope",
             HttpStatus.CONFLICT),
     BRAND_NOT_FOUND("Brand not found", HttpStatus.NOT_FOUND),

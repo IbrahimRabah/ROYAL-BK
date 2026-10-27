@@ -78,7 +78,7 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 7. [Inventory — Admin](#inventory--admin) — `/api/v1/admin/inventory`
 8. [Invoices](#invoices) — `/api/v1/admin/invoices`, `/api/v1/me/invoices`
 9. [Shipping & Geography](#shipping--geography) — `/api/v1/shipping`, `/api/v1/geo`, `/api/v1/admin/shipping`
-10. [Custom Requests](#custom-requests) — `/api/v1/custom-requests`, `/api/v1/admin/custom-requests`
+10. [Custom Requests](#custom-requests) — `/api/v1/custom-requests`, `/api/v1/me/custom-requests`, `/api/v1/admin/custom-requests`
 11. [Portfolio](#portfolio) — `/api/v1/portfolio`, `/api/v1/admin/portfolio`
 12. [Dashboard](#dashboard) — `/api/v1/admin/dashboard`
 13. [Audit Log](#audit-log) — `/api/v1/admin/audit`
@@ -531,15 +531,13 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 
 **Query params:** `q` (optional string; at most 60 characters are used).
 
-**Success response `200`:**
+**Success response `200`** — real bodies, verbatim from the wire (test data; the second product has no image):
 ```json
-{
-  "products": [
-    { "name": "كرسي خشب زان", "slug": "kursi-khashab-zan", "imageUrl": "http://localhost:8080/uploads/products/2026/10/chair.png", "price": 1450.0000 },
-    { "name": "كرسي حديد مشغول", "slug": "kursi-hadid-mashghul", "price": 980.0000 }
-  ],
-  "categories": [ { "id": 7, "name": "كراسي", "slug": "chairs" } ]
-}
+{"products":[{"name":"كرسي حديد مشغول 395d71","slug":"wire-3277e8a5","price":980.0000},{"name":"كرسي خشب زان 395d71","slug":"wire-6cf00c4b","imageUrl":"http://localhost:8080/uploads/products/2026/10/chair.png","price":1450.0000}],"categories":[]}
+```
+and, for a query that matches a category:
+```json
+{"products":[],"categories":[{"id":6359,"name":"كراسي 395d71","slug":"wire-395d71-0"}]}
 ```
 - **Both lists are always present**, empty when nothing matches. A missing or blank `q`, one that is shorter than 2 letters after Arabic folding, or only punctuation, is `200` with two empty lists — **never an error, and never `404`**.
 - `ProductSuggestion`: `name` (language of `Accept-Language`, `ar` default), `slug`, `imageUrl` (absent when the product has none), `price` (the lowest price among its active variants — a "from" price, tax-inclusive; absent when no variant is on sale). Nothing else.
@@ -2192,7 +2190,7 @@ An address a customer saved *before* the governorate closed is not deleted; it i
 ---
 
 ## Custom Requests
-Base paths: `/api/v1/custom-requests` (public), `/api/v1/admin/custom-requests` (admin)
+Base paths: `/api/v1/custom-requests` (public), `/api/v1/me/custom-requests` (signed-in customer), `/api/v1/admin/custom-requests` (admin)
 
 A customer asks for a different size of a ready-made product, a product made to order, or fully custom work. **A request is not a sale.** It reserves no stock — not even a size request on a product that is in stock — and it has no price until staff quote one and the customer accepts. Converting an accepted request into an order is not built yet.
 
@@ -2295,6 +2293,54 @@ Only while the request is `NEW`: once staff have contacted the customer, it stop
 | 404 | CUSTOM_REQUEST_NOT_FOUND | No such request — **and also** a missing, wrong, tampered, expired or other-request token. These are deliberately indistinguishable, so request ids cannot be probed |
 | 409 | CUSTOM_REQUEST_CLOSED | The request is no longer `NEW` |
 | 429 | RATE_LIMITED | More than 30 attempts in an hour from this IP |
+
+---
+
+### MyCustomRequestController — `/api/v1/me/custom-requests`
+**Auth:** signed-in customer (`Authorization: Bearer`).
+Only requests whose `customer_id` is the caller. **Never matched by phone number or email; a guest's request never appears; one that is not the caller's is `404 CUSTOM_REQUEST_NOT_FOUND`, the same answer as one that does not exist.** The staff note is never returned.
+
+#### `GET /api/v1/me/custom-requests`
+Paginated (`page`, `size`; default 10, max 50), newest first, **not re-sortable**. `PageResponse<MyCustomRequestSummaryResponse>`:
+Real body, verbatim from the wire — a `NEW` request with no product, and a `QUOTED` one about a product:
+```json
+{"content":[{"requestNumber":"REQ-2026-000002","type":"CUSTOM_WORK","status":"NEW","submittedAt":"2026-10-27T16:56:17.0344755Z","canAccept":false,"canReject":false},{"requestNumber":"REQ-2026-000001","type":"SIZE_VARIANT","status":"QUOTED","submittedAt":"2026-10-27T16:56:16.8575901Z","product":{"slug":"custom-req-product-599b5ce9","name":"custom-req-product-599b5ce9"},"quotedAmount":4500.0000,"quotedAt":"2026-10-27T16:56:16.909Z","canAccept":true,"canReject":true}],"page":0,"size":10,"totalElements":2,"totalPages":1,"first":true,"last":true,"empty":false}
+```
+`product`, `quotedAmount` and `quotedAt` are absent when there is none. **`canAccept` / `canReject` are decided by the server** (`status = QUOTED` with a quote): the client must not derive them from `status`.
+
+#### `GET /api/v1/me/custom-requests/summary`
+`{ "awaitingResponse": 2 }` — how many of the caller's requests have a quote waiting for an answer. For a badge. It stays until they answer; it is not "new since your last visit".
+
+#### `GET /api/v1/me/custom-requests/{requestNumber}`
+`MyCustomRequestResponse`: the list fields plus `description` (what the customer wrote — **not** `notes`; `notes` is only the name of the field on `POST /custom-requests`), `quantity` (the quote is for **all** units) and `widthCm` / `heightCm` / `depthCm` (each absent when not given). Real body, verbatim:
+```json
+{"requestNumber":"REQ-2026-000001","type":"SIZE_VARIANT","status":"QUOTED","submittedAt":"2026-10-27T16:56:16.8575901Z","product":{"slug":"custom-req-product-599b5ce9","name":"custom-req-product-599b5ce9"},"description":"أريده أعرض قليلاً","quantity":2,"widthCm":120.00,"heightCm":80.00,"quotedAmount":4500.0000,"quotedAt":"2026-10-27T16:56:16.909Z","canAccept":true,"canReject":true}
+```
+**Errors:** `404 CUSTOM_REQUEST_NOT_FOUND`.
+
+#### `POST /api/v1/me/custom-requests/{requestNumber}/accept`
+**Request body:** `{ "quotedAmount": 4500.00 }` — **required**: the price the customer saw. Staff may revise a quote while it is `QUOTED` and the status does not change, so without this a customer could accept a price they never saw.
+**Success `200`:** the request, now `ACCEPTED`. Audited as `CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER`; the staff note is untouched.
+**A repeat of what already happened is a `200`, not a conflict** (the request is already accepted at that price — by the customer, or by staff on the phone); no second audit entry.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | VALIDATION_FAILED | `quotedAmount` missing or not positive |
+| 404 | CUSTOM_REQUEST_NOT_FOUND | Unknown, not the caller's, or a guest's |
+| 409 | QUOTE_CHANGED | The quote differs from `quotedAmount` — staff revised it (or it was accepted at another price). Reload and show the new price. Nothing was accepted |
+| 409 | QUOTE_ALREADY_ANSWERED | The request was `REJECTED` (by the customer or by staff) |
+| 409 | CUSTOM_REQUEST_QUOTE_REQUIRED | Not quoted yet (`NEW` / `CONTACTED`) |
+
+#### `POST /api/v1/me/custom-requests/{requestNumber}/reject`
+No body. There is no reason field: the only note field is internal. **Success `200`:** the request, now `REJECTED`; audited as `CUSTOM_REQUEST_REJECTED_BY_CUSTOMER`. Rejecting a rejected request is a `200`.
+
+| Status | Code | When |
+|---|---|---|
+| 404 | CUSTOM_REQUEST_NOT_FOUND | As above |
+| 409 | QUOTE_ALREADY_ANSWERED | The request was already accepted (by the customer or by staff) |
+| 409 | CUSTOM_REQUEST_QUOTE_REQUIRED | Not quoted yet |
+
+**The race:** accepting and rejecting take the same row lock the admin endpoints take. The first writer wins; the other gets `QUOTE_ALREADY_ANSWERED`, never a 500. Acceptance by phone, recorded by staff (`PATCH /admin/custom-requests/{id}/status`), is unchanged.
 
 ---
 
@@ -2666,6 +2712,8 @@ Amounts are stored to four decimals. `entityId` is the governorate id, the rate 
 |---|---|---|---|
 | `CUSTOM_REQUEST_STATUS_CHANGED` | `PATCH /admin/custom-requests/{id}/status`, and the move to `QUOTED` when a request is first quoted | `CUSTOM_REQUEST` / `REQ-2026-000001` | status → status, e.g. `NEW` → `CONTACTED`. `reason` is the staff note |
 | `CUSTOM_REQUEST_QUOTED` | `PATCH /admin/custom-requests/{id}/quote`, when the amount changed | `CUSTOM_REQUEST` / `REQ-2026-000001` | amount → amount at four decimals, e.g. `4000.0000` → `5500.0000` (`oldValue` is empty for the first quote). `reason` is the note sent with the quote |
+| `CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER` | `POST /me/custom-requests/{n}/accept` — **the customer, not staff** | `CUSTOM_REQUEST` / `REQ-2026-000001` | `QUOTED` → `ACCEPTED`; `reason` is `Accepted at <amount>`; `actorKind` is `CUSTOMER` |
+| `CUSTOM_REQUEST_REJECTED_BY_CUSTOMER` | `POST /me/custom-requests/{n}/reject` — **the customer, not staff** | `CUSTOM_REQUEST` / `REQ-2026-000001` | `QUOTED` → `REJECTED`; no `reason`; `actorKind` is `CUSTOMER` |
 
 **Order events** — a delivery appointment is a commitment made to the customer, and the order keeps only the latest one, so the audit log is the history of what was promised and when it moved. Same rules: only real changes are recorded (setting the same date again records nothing), and a refused call records nothing.
 
@@ -2687,12 +2735,13 @@ Amounts are stored to four decimals. `entityId` is the governorate id, the rate 
     {
       "id": 9931, "action": "PRICE_CHANGED", "entityType": "PRODUCT_VARIANT", "entityId": "501", "entityLabel": "WATCH-BLK-42",
       "oldValue": "3200.0000", "newValue": "2950.0000", "reason": "خصم موسمي",
-      "actorId": 7, "actorName": "Youssef Nabil", "createdAt": "2026-08-11T14:22:03Z"
+      "actorId": 7, "actorName": "Youssef Nabil", "actorKind": "STAFF", "createdAt": "2026-08-11T14:22:03Z"
     }
   ],
   "page": 0, "size": 50, "totalElements": 412, "totalPages": 9, "first": true, "last": false, "empty": false
 }
 ```
+**`actorKind`** — `STAFF`, `CUSTOMER` or `SYSTEM` (no person). `actorName` alone cannot tell a customer from a member of staff, and since customers can now accept or reject their own custom-request quotes (`CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER` / `CUSTOM_REQUEST_REJECTED_BY_CUSTOMER`), a screen that renders "<actorName> accepted the quote" must show `actorKind` with it, or it presents the customer's decision as a staff action. Derived from the action, not stored: no migration, old rows read correctly.
 
 **Error responses:** `400 INVALID_PARAMETER` for an unknown `action` value; the `detail` lists the valid values.
 

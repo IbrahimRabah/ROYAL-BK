@@ -55,7 +55,7 @@
 ### 1.5 الطلبات الخاصة (Custom Requests) والمعرض (Portfolio)
 
 - **طلب خاص**: نموذج يرسله أي زائر (بدون حساب) يطلب مقاسًا مختلفًا أو منتجًا يُصنع بعد الطلب أو عملًا مخصصًا. ليس عملية بيع: لا حجز مخزون ولا تسعير حتى يعرض الموظف **عرض سعر (quote)**. الرقم `REQ-<سنة>-<6 أرقام>` متسلسل بلا فجوات لكل سنة (بتوقيت القاهرة).
-- لا توجد نقطة نهاية للعميل لقراءة حالة طلبه الخاص أو سرد طلباته؛ العميل يحصل فقط على `requestNumber` ورمز مرفقات مرة واحدة عند الإنشاء. لا يُرسَل أي بريد أو إشعار عن الطلب الخاص.
+- **العميل المسجَّل يرى طلباته الخاصة ويرد على السعر بنفسه** (`/me/custom-requests`، انظر 4.2 و3.3). الضيف يحصل فقط على `requestNumber` ورمز مرفقات مرة واحدة، وطلبه يبقى بالهاتف فقط. لا يُرسَل أي بريد أو إشعار عن الطلب الخاص، فالعميل لا يعرف بوصول سعر إلا حين يفتح الموقع (عدّاد `awaitingResponse`).
 - **المعرض (portfolio)**: كتالوج أعمال منجزة للعرض فقط (عنوان/وصف/صور/تصنيف/تاريخ إنجاز)؛ ليس منتجات قابلة للشراء. يبدأ غير منشور، ويُؤرشف بدل الحذف.
 - **نطاق التصنيف (`category.scope`)**: المعرض والمتجر يتشاركان جدول `category`، والذي يفصل بينهما العمود `scope` = `PRODUCT` (الافتراضي، وكل التصنيفات الموجودة) أو `PORTFOLIO`.
   - تصنيف `PORTFOLIO` لا يظهر أبدًا في شجرة المتجر ولا في `GET /categories/{slug}` (404 كأنه مجهول) ولا في فلاتر المنتجات؛ وتصنيف `PRODUCT` لا يظهر في `GET /portfolio/categories` (قائمة **مسطّحة** لتصنيفات `PORTFOLIO` الفعّالة؛ تصير شجرة إن عششوا يومًا).
@@ -353,7 +353,16 @@ CONVERTED: معرّفة في الـ enum وعمود القاعدة، ولا يم
 - `QUOTED` **لا يُضبط يدويًا** (يرفضه `/status`)، بل يأتي فقط من إعطاء سعر؛ لذلك لا يمكن أن توجد حالة `QUOTED` بلا سعر. `ACCEPTED` يتطلب سعرًا مسجَّلًا (`CUSTOM_REQUEST_QUOTE_REQUIRED` 409 إن لم يوجد). `REJECTED` تتطلب `note` (وإلا `VALIDATION_FAILED`). `CONVERTED` يُرفض دائمًا (التحويل إلى طلب غير مبني).
 - الدالة `CustomRequestStatus.isTerminal()` تعدّ `ACCEPTED` نهائية رغم وجود `ACCEPTED → COMPLETED`؛ وتُستعمل فقط لتحديد رسالة الخطأ.
 - **الآثار:** كل تغيير حالة وكل تغيير سعر يُسجَّل في `audit_log` (`CUSTOM_REQUEST_STATUS_CHANGED` / `CUSTOM_REQUEST_QUOTED`) مع المنفِّذ؛ الصف يحتفظ بآخر ملاحظة وآخر سعر فقط (`adminNote`, `quotedAmount`). الصف يُقفل (`lockById`) أثناء التعديل. **لا بريد ولا إشعار للعميل ولا حجز مخزون ولا إنشاء طلب** في أي انتقال. المرفقات تُقبل فقط وهو `NEW` (`CUSTOM_REQUEST_CLOSED` 409 بعد ذلك).
-- عرض السعر: `amount` بين 0.01 و100,000,000، **للطلب كله (كل الوحدات) وشامل الضريبة**.
+- عرض السعر: `amount` بين 0.01 و100,000,000، **للطلب كله (كل الوحدات) وشامل الضريبة**. **`quoted_at` (V22)** = متى ضُبط المبلغ الحالي: يتحرك عند **تغيير المبلغ** ولا يتحرك عند حفظ نفس المبلغ ثانيةً (سعر الأثاث يتقادم؛ عرض بلا تاريخ سعر بلا عمر).
+- **العميل يجيب بنفسه — طريق ثانٍ لنفس الانتقالين** (`/me/custom-requests/{n}/accept|reject`، 4.2). **القبول بالهاتف الذي يسجّله الأدمن يعمل كما كان بالضبط.**
+  - مسموح للعميل **انتقالان فقط**: `QUOTED→ACCEPTED` و`QUOTED→REJECTED`. لا شيء آخر.
+  - **الخادم هو الذي يقول إن القبول والرفض متاحان** (`canAccept`/`canReject` في الاستجابة، = `QUOTED` ومعه سعر). العميل لا يستنتجهما من الحالة (نفس نمط `cancellable` في الطلبات).
+  - **قفل الصف نفسه** (`PESSIMISTIC_WRITE`) الذي يأخذه الأدمن: الكاتب الأول يكسب والحالة تُعاد قراءتها تحت القفل، والخاسر يأخذ `QUOTE_ALREADY_ANSWERED` (409) لا 500. مثبَّت باختبار تسابق حقيقي بخيطين (ويفشل لو أُزيل القفل).
+  - **القبول يحمل السعر الذي رآه العميل** (`quotedAmount`): الأدمن يستطيع تعديل السعر وهو `QUOTED` والحالة تبقى `QUOTED`، فلا قفل يميّز «قبول السعر المعدَّل» عن «قبول سعر لم يره». المخالفة `QUOTE_CHANGED` (409) ولا يُقبل شيء. (قبول سعر لم يره العميل خطأ مال، ويحق له الاعتراض على الفاتورة.)
+  - **التكرار بنفس النتيجة نجاح لا تعارض:** قبول طلب مقبول بالسعر نفسه (سواء قبله العميل أو الأدمن بالهاتف) و`رفض` طلب مرفوض = `200` بلا صف تدقيق ثانٍ. **التعارض فقط حين تتضاد النتيجتان** (قبول مقابل رفض).
+  - **ما يراه العميل:** المرجع والنوع والحالة وتاريخ التقديم والمنتج المرتبط ووصفه هو والكمية والمقاسات (مدخلاته) والمبلغ وتاريخه. **لا شيء داخلي** (7.4).
+  - **الملكية بـ`customer_id` فقط، ولا مطابقة بالهاتف أو البريد أبدًا** (لأي أحد أن يسجّل برقم غريب)، وطلبات الضيف لا تظهر لأي حساب. ما ليس لي = `CUSTOM_REQUEST_NOT_FOUND` 404 كغير الموجود.
+  - **التدقيق:** `CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER` / `CUSTOM_REQUEST_REJECTED_BY_CUSTOMER` والمنفِّذ = id العميل واسمه، **ولا يلمسان `admin_note`**. استجابة `GET /admin/audit` فيها `actorKind` (`STAFF` / `CUSTOMER` / `SYSTEM`) لأن الاسم وحده لا يفرّق عميلًا عن موظف.
 - **تحذير نشر:** الحالة `COMPLETED` تتطلب تطبيق السكربت `V18__custom_request_completed.sql` على القاعدة. ملف `src/main/resources/db/README.md` يقول إنه "Not yet applied to `royal`". إن لم يُطبَّق، فتعيين `COMPLETED` يفشل بقيد CHECK، وسيعيده `GlobalExceptionHandler` كـ `DUPLICATE_VALUE` (409 "This value is already in use") لأن رسالة قيد CHECK لا تطابق أي حالة معروفة. (لم أتحقق من حالة قاعدة البيانات الحية.)
 
 المصدر: `src/main/java/com/velora/api/customrequest/domain/CustomRequestStatus.java` · `src/main/java/com/velora/api/customrequest/service/CustomRequestAdminService.java:108-137,148-181,185-196` · `src/main/java/com/velora/api/customrequest/service/CustomRequestService.java:233-283` · `src/main/java/com/velora/api/customrequest/dto/CustomRequestQuoteRequest.java` · `src/main/resources/db/V18__custom_request_completed.sql` · `src/main/resources/db/README.md:17` · `src/main/java/com/velora/api/common/exception/GlobalExceptionHandler.java:168-192,195-217`
@@ -555,6 +564,11 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 |---|---|---|---|---|---|
 | `POST /auth/me` | بيانات الرمز | — | لا شيء | `UserResponse` **جزئي**: `id, email, phone, roles` من الرمز؛ `firstName/lastName/fullName` غائبة؛ `emailVerified/phoneVerified` دائمًا `false`؛ `locale` دائمًا `"ar"` | — (هذا الـ endpoint `POST`) |
 | `POST /auth/logout-all` | خروج من كل الأجهزة | — | يُلغي كل refresh tokens | `{message}` | — |
+| `GET /me/custom-requests` | طلباتي الخاصة | `page`,`size`(10، الحد 50) | — | `PageResponse<MyCustomRequestSummaryResponse>` الأحدث أولًا، **والترتيب ثابت** | — |
+| `GET /me/custom-requests/summary` | عدّاد لشارة | — | — | `{awaitingResponse}` = طلباتي `QUOTED`؛ يبقى حتى الرد، **وليس «جديد منذ آخر زيارة»** | — |
+| `GET /me/custom-requests/{requestNumber}` | طلب واحد بالرقم المرجعي | — | — | `MyCustomRequestResponse` | `CUSTOM_REQUEST_NOT_FOUND` 404 (غير موجود **أو** ليس لي **أو** طلب ضيف — جواب واحد) |
+| `POST /me/custom-requests/{requestNumber}/accept` | قبول السعر | جسم: `quotedAmount*` = **السعر الذي رآه العميل** | `QUOTED→ACCEPTED`؛ تدقيق `CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER` | `MyCustomRequestResponse` | `QUOTE_CHANGED` 409 (عُدِّل السعر بعد أن رآه)، `QUOTE_ALREADY_ANSWERED` 409 (رُفض)، `CUSTOM_REQUEST_QUOTE_REQUIRED` 409 (لم يُسعَّر بعد)، `VALIDATION_FAILED` 400. **قبول مقبول بنفس السعر = 200 بلا تدقيق ثانٍ** |
+| `POST /me/custom-requests/{requestNumber}/reject` | رفض السعر | — (بلا سبب) | `QUOTED→REJECTED`؛ تدقيق `CUSTOM_REQUEST_REJECTED_BY_CUSTOMER` | `MyCustomRequestResponse` | `QUOTE_ALREADY_ANSWERED` 409 (قُبل)، `CUSTOM_REQUEST_QUOTE_REQUIRED` 409. **رفض مرفوض = 200** |
 | `GET /me/orders` | طلباتي | `page`,`size`(10) | — | `PageResponse<OrderSummaryResponse>` الأحدث أولًا | — |
 | `GET /me/orders/{orderNumber}` | طلب واحد بكل تفاصيله والسجل الزمني | — | — | `OrderResponse` | `ORDER_NOT_FOUND` 404 (غير موجود أو ليس لك) |
 | `POST /me/orders/{orderNumber}/cancel` | إلغاء قبل الشحن | `reason?`(≤255) | `CANCELLED` + تحرير المخزون + سجل | `OrderResponse` | `ORDER_NOT_FOUND` 404؛ `ORDER_CANNOT_BE_CANCELLED` 409 إن `cancellable=false`؛ `INVALID_STATUS_TRANSITION` 409 احتياطًا فقط (انظر 3.1) — للمرتجعة وغيرها `ORDER_CANNOT_BE_CANCELLED` |
@@ -1042,7 +1056,8 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 
 ### 7.4 ما يتوقعه العميل ولن يجده
 
-1. **قراءة حالة طلبه الخاص** — لا endpoint؛ يعرف فقط رقم الطلب.
+1. **قراءة حالة طلبه الخاص** — **للعميل المسجَّل فقط** (`/me/custom-requests`، 4.2). الضيف لا endpoint له: يعرف فقط رقم الطلب، ويتابعه بالهاتف.
+   - **⚠️ ما لا يراه العميل المسجَّل أيضًا (قرار مقصود، وله ثمن):** **لا سبب يظهر لطلب مرفوض، ولا رسالة ترافق السعر.** لأن حقل الملاحظة الوحيد (`admin_note`) **داخلي**: صندوق واحد يحمل ملاحظة التسعير **وسبب الرفض الإلزامي** معًا، فلا يمكن كشفه دون أن يرى العميل يومًا ما كُتب للورشة وحدها (مثل «يساوم، لا تنزل عن 15 ألفًا»). **الثمن:** يرى العميل `REJECTED` أو سعرًا بلا أي شرح، وتشرح الورشة الاثنين **بالهاتف**، تمامًا كما كانت تفعل. وعميل يرفض من حسابه لا يستطيع أن يقول **لماذا** للورشة (لا حقل لذلك) إلا بالاتصال. **ولا بريد ولا إشعار** حين يصل سعر: يعرف العميل من العدّاد حين يفتح الموقع. **الحل لاحقًا (ليس هذه الجولة):** حقل **منفصل باسم صريح** مرئي للعميل، وفورم الأدمن مكتوب عليه «ظاهر للعميل»، وحقل لسبب رفض العميل يراه الأدمن. حتى ذلك الحين: لا تضع أبدًا `adminNote` في أي استجابة للعميل.
 2. **استعادة كلمة المرور** أو استلام رمز تحقق — لا يصل شيء.
 3. **تتبع طلب كضيف** أو معاينته بعد الشراء.
 4. **الدفع الإلكتروني أو استرداد المبلغ**.

@@ -1,4 +1,4 @@
-# ROYAL — اللي اتغيّر عن VELORA (V11 → V21)
+# ROYAL — اللي اتغيّر عن VELORA (V11 → V22)
 
 للمطوّر اللي هيبني الواجهة (Angular). ده **مش نسخة من العقد** — ده دليل "إيه اللي اتغيّر وإيه اللي يتوقعه".
 التفاصيل الكاملة لكل endpoint في [VELORA_API_Contract.md](VELORA_API_Contract.md).
@@ -101,28 +101,18 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 
 عام (بدون token). param واحد: **`q`** (نص، اختياري). الرد دايمًا `200`، **والقائمتين دايمًا موجودتين** (فاضيتين لو مفيش نتيجة):
 
+**ردود حقيقية، حرفيًا زي ما جت على الـ wire** (من اختبار شغّال على قاعدة الاختبار؛ الأسماء فيها لاحقة عشوائية `395d71` لأنها بيانات اختبار، والـ host `localhost:8080` من إعداد الاختبار):
+
+`GET /api/v1/search/suggestions?q=كرسى 395d71` — منتجات بس (المنتج الأول من غير `imageUrl`، التاني ليه):
 ```json
-{
-  "products": [
-    {
-      "name": "كرسي خشب زان",
-      "slug": "kursi-khashab-zan",
-      "imageUrl": "http://localhost:8080/uploads/products/2026/10/chair.png",
-      "price": 1450.0000
-    },
-    {
-      "name": "كرسي حديد مشغول",
-      "slug": "kursi-hadid-mashghul",
-      "price": 980.0000
-    }
-  ],
-  "categories": [
-    { "id": 7, "name": "كراسي", "slug": "chairs" }
-  ]
-}
+{"products":[{"name":"كرسي حديد مشغول 395d71","slug":"wire-3277e8a5","price":980.0000},{"name":"كرسي خشب زان 395d71","slug":"wire-6cf00c4b","imageUrl":"http://localhost:8080/uploads/products/2026/10/chair.png","price":1450.0000}],"categories":[]}
 ```
 
-(جزء المنتجات أخدته حرفيًا من رد حقيقي؛ شكل عنصر التصنيف `{id, name, slug}` مثبّت بالظبط في الاختبارات. الـ slugs والـ id هنا للتوضيح.)
+`GET /api/v1/search/suggestions?q=كراسي 395d71` — تصنيف بس:
+```json
+{"products":[],"categories":[{"id":6359,"name":"كراسي 395d71","slug":"wire-395d71-0"}]}
+```
+(لو الاستعلام يطابق الاتنين، الرد فيه المصفوفتين مليانين بنفس العناصر دي. القائمتين **دايمًا** موجودتين.)
 
 **حقول المنتج:** `name` و`slug` دايمًا. `imageUrl` و`price` **بيغيبوا** لو مفيش (منتج بلا صورة، أو بلا variant معروض للبيع) — مش `null`. مفيش حاجة تانية: لا `id` ولا وصف ولا مخزون.
 - **`name`** بلغة `Accept-Language` (`ar` افتراضي). **المطابقة** بتتم على الاسم بأي لغة، فالعميل اللي بيكتب `sofa` والواجهة عربي بيلاقي «كنبة».
@@ -164,32 +154,106 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 | `size` | رقم | `12` | **الحد الأقصى 50 — اللي أكبر منه بيتقصّ بصمت** (`size=100` بيرجع `"size": 50`) |
 | `sort` | — | — | **بيتتجاهل.** الترتيب ثابت: `displayOrder` ثم الأحدث |
 
-الرد (`PageResponse`)، الحقول الفاضية **بتتشال** (مش بترجع `null`):
+الرد (`PageResponse`)، الحقول الفاضية **بتتشال** (مش بترجع `null`). رد حقيقي حرفيًا من الـ wire لـ`GET /api/v1/portfolio` — العنصر الأول من غير تصنيف ولا صورة، التاني ليه الاتنين:
 ```json
-{
-  "content": [
-    {
-      "id": 1, "slug": "sheikh-zayed-villa-gate", "title": "بوابة حديد مشغول — فيلا الشيخ زايد",
-      "imageUrl": "http://localhost:8081/uploads/portfolio/2026/10/3a606ac55cd240db832bce97f61783f2.png",
-      "categorySlug": "doors", "categoryName": "أبواب", "completedAt": "2026-10-20"
-    }
-  ],
-  "page": 0, "size": 12, "totalElements": 1, "totalPages": 1, "first": true, "last": true, "empty": false
-}
+{"content":[{"id":784,"slug":"wire-stairs-395d71","title":"سلم حديد","completedAt":"2026-10-20"},{"id":783,"slug":"wire-gate-395d71","title":"بوابة حديد مشغول","imageUrl":"http://localhost:8080/uploads/portfolio/2026/10/gate.png","imageAlt":"واجهة البوابة","categorySlug":"wire-395d71-1","categoryName":"أبواب 395d71","completedAt":"2026-10-20"}],"page":0,"size":12,"totalElements":2,"totalPages":1,"first":true,"last":true,"empty":false}
 ```
 حقول العنصر: `id`, `slug`, `title` (دايمًا)، و`imageUrl`, `imageAlt`, `categorySlug`, `categoryName`, `completedAt` (**بتغيب لو مفيش قيمة**). مفيش `categoryId` في العنصر — اربط العنصر بالتصنيف عن طريق `categorySlug`.
 
-**`GET /api/v1/portfolio/categories`** — قايمة مباشرة (**مصفوفة، مش `PageResponse`**)، كل عنصر بالحقول دي بالظبط:
+**`GET /api/v1/portfolio/categories`** — قايمة مباشرة (**مصفوفة، مش `PageResponse`**). رد حقيقي حرفيًا من الـ wire (الأول ليه صورة، التاني لأ):
 ```json
-[
-  { "id": 31, "slug": "doors",  "name": "أبواب", "displayOrder": 0 },
-  { "id": 32, "slug": "stairs", "name": "سلالم", "imageUrl": "http://localhost:8081/uploads/categories/2026/10/a1b2c3.jpg", "displayOrder": 1 }
-]
+[{"id":6360,"slug":"wire-395d71-1","name":"أبواب 395d71","imageUrl":"http://localhost:8080/uploads/categories/2026/10/doors.png","displayOrder":1},{"id":6361,"slug":"wire-395d71-2","name":"سلالم 395d71","displayOrder":2}]
 ```
-- `id`, `slug`, `name`, `displayOrder` دايمًا. `imageUrl` **بيغيب** لو التصنيف مالوش صورة (زي "أبواب" فوق).
+- `id`, `slug`, `name`, `displayOrder` دايمًا. `imageUrl` **بيغيب** لو التصنيف مالوش صورة (زي التاني فوق).
 - **`name` نص واحد بلغة الطلب، مش `nameAr`/`nameEn`.** اللغة من `Accept-Language`: `ar` (الافتراضي) بيرجع "أبواب"، و`en` بيرجع "Doors"، ولو التصنيف مالوش اسم إنجليزي بيرجع العربي. ابعت الـ header نفسه اللي بتبعته لباقي الـ endpoints العامة.
 - بتفلتر بيه: خد `id` وابعته `?categoryId=` لـ`GET /portfolio`.
 
+
+### العميل المسجّل (`Authorization: Bearer` — بدون توكن `401`): طلباته الخاصة وردّه على السعر (V22)
+
+العميل المسجّل يشوف **طلبات التصنيع اللي قدّمها وهو مسجّل دخول**، ويشوف السعر لما الأدمن يسجّله، ويقبله أو يرفضه بنفسه. **القبول بالتليفون اللي بيسجّله الأدمن شغّال زي ما هو** — ده طريق تاني مش بديل.
+
+| المسار | الغرض |
+|---|---|
+| `GET /api/v1/me/custom-requests?page=&size=` | طلباتي، الأحدث أولًا (`PageResponse`، افتراضي 10، أقصى 50). **الترتيب ثابت**، `sort` بيتتجاهل |
+| `GET /api/v1/me/custom-requests/summary` | **عدّاد للـ badge**: `{ "awaitingResponse": 2 }` |
+| `GET /api/v1/me/custom-requests/{requestNumber}` | طلب واحد **بالرقم المرجعي** (`REQ-2026-000014`) مش بالـ id |
+| `POST /api/v1/me/custom-requests/{requestNumber}/accept` | قبول السعر. **جسم: `{ "quotedAmount": 4500.00 }` إجباري** |
+| `POST /api/v1/me/custom-requests/{requestNumber}/reject` | رفض السعر. بدون جسم |
+
+> **كل JSON تحت ده رد حقيقي حرفيًا، زي ما جه على الـ wire** من اختبار شغّال على قاعدة الاختبار (مش وصف ولا تقريب). أسماء المفاتيح هي اللي في الرد بالظبط. لو مفتاح مش مكتوب هنا، مفيش مفتاح بالاسم ده.
+
+`GET /api/v1/me/custom-requests` — طلبين: الأحدث (`NEW`، من غير منتج ولا سعر) والأقدم (`QUOTED` عن منتج):
+```json
+{"content":[{"requestNumber":"REQ-2026-000002","type":"CUSTOM_WORK","status":"NEW","submittedAt":"2026-10-27T16:56:17.0344755Z","canAccept":false,"canReject":false},{"requestNumber":"REQ-2026-000001","type":"SIZE_VARIANT","status":"QUOTED","submittedAt":"2026-10-27T16:56:16.8575901Z","product":{"slug":"custom-req-product-599b5ce9","name":"custom-req-product-599b5ce9"},"quotedAmount":4500.0000,"quotedAt":"2026-10-27T16:56:16.909Z","canAccept":true,"canReject":true}],"page":0,"size":10,"totalElements":2,"totalPages":1,"first":true,"last":true,"empty":false}
+```
+
+`GET /api/v1/me/custom-requests/REQ-2026-000001` — **التفاصيل** (طلب `QUOTED` عن منتج، بمقاسات):
+```json
+{"requestNumber":"REQ-2026-000001","type":"SIZE_VARIANT","status":"QUOTED","submittedAt":"2026-10-27T16:56:16.8575901Z","product":{"slug":"custom-req-product-599b5ce9","name":"custom-req-product-599b5ce9"},"description":"أريده أعرض قليلاً","quantity":2,"widthCm":120.00,"heightCm":80.00,"quotedAmount":4500.0000,"quotedAt":"2026-10-27T16:56:16.909Z","canAccept":true,"canReject":true}
+```
+
+`GET /api/v1/me/custom-requests/REQ-2026-000002` — **التفاصيل** لطلب `NEW` من غير منتج ولا مقاسات ولا سعر (اللي بيغيب بيبان هنا):
+```json
+{"requestNumber":"REQ-2026-000002","type":"CUSTOM_WORK","status":"NEW","submittedAt":"2026-10-27T16:56:17.0344755Z","description":"ورق حائط بمقاس خاص","quantity":1,"canAccept":false,"canReject":false}
+```
+
+`GET /api/v1/me/custom-requests/summary`:
+```json
+{"awaitingResponse":1}
+```
+
+**أسماء المفاتيح (⚠️ اتخمّنت غلط قبل كده):**
+- **وصف العميل = `description`**، **مش `notes`** ومش `customerNote`. (`notes` هو اسم الحقل في **الإنشاء** `POST /custom-requests`؛ الرد بيرجّعه باسم `description`.)
+- المقاسات: **`widthCm`** و**`heightCm`** و**`depthCm`** — كل واحد **بيغيب** لو العميل ما حطّوش (في المثال فوق `depthCm` غايب). قيمتهم رقم بخانتين (`120.00`).
+- الكمية **`quantity`** (رقم صحيح، دايمًا موجود في التفاصيل، مش في القائمة).
+- السعر **`quotedAmount`**، وتاريخه **`quotedAt`**، وتاريخ التقديم **`submittedAt`** (مش `createdAt`).
+- المنتج **`product`** ومفتاحيه **`slug`** و**`name`** بس (مفيش `id`).
+- الزرارين **`canAccept`** و**`canReject`**.
+- `requestNumber` و`type` و`status` و`submittedAt` و`canAccept` و`canReject` **دايمًا** موجودين. `product` و`quotedAmount` و`quotedAt` **بيغيبوا** لو مفيش.
+- `status`: `NEW` · `CONTACTED` · `QUOTED` · `ACCEPTED` · `REJECTED` · `COMPLETED` (و`CONVERTED` لسه ما بيوصلهاش حد). `type`: `SIZE_VARIANT` · `MADE_TO_ORDER` · `CUSTOM_WORK`.
+- `submittedAt` ممكن يجي بـ7 خانات كسور (`…17.0344755Z`) و`quotedAt` بـ3 (`…16.909Z`)؛ الاتنين ISO-8601 UTC وبيتقروا عادي بـ`new Date(...)`.
+- **`quotedAmount` للطلب كله بكل الوحدات**، شامل الضريبة (رقم بأربع خانات، اعرضه بخانتين). **`quotedAt` هو تاريخ السعر الحالي**: بيتغيّر لما الأدمن يعدّل المبلغ، مش لما يحفظ نفس المبلغ تاني. اعرضه جنب السعر («سعر بتاريخ كذا»)، لأن أسعار الأثاث بتقدم.
+
+**⚠️ `canAccept` و`canReject` السيرفر هو اللي بيقرر — ما تستنتجهمش من `status`.** (زي `cancellable` في الطلبات.) دلوقتي الاتنين = «السعر مستني ردّك» بس مفصولين عشان يفترقوا لاحقًا. اظهر الزرارين بيهم بس.
+
+**القبول بيبعت السعر اللي العميل شافه:**
+- ابعت `quotedAmount` = `quotedAmount` من الرد اللي العميل كان بيبص عليه لحظة الضغط. السبب: الأدمن يقدر يعدّل السعر وهو `QUOTED` والحالة ما بتتغيّرش، فلولا ده العميل كان ممكن يقبل سعر ما شافهوش.
+- **الرقم بيتقارن بالقيمة مش بعدد الخانات**: `4500` و`4500.00` و`4500.0` و`4.5E3` كلهم نفس سعر `4500.0000` المخزّن ويتقبلوا. أي فرق في القيمة (حتى قرش: `4500.01`) ⇒ `QUOTE_CHANGED`. (مثبّت بالاختبار.)
+- لو السعر اتغيّر: **`409 QUOTE_CHANGED`** ومفيش حاجة اتقبلت. اعمل reload للطلب (`GET`)، واعرض السعر الجديد وتاريخه، وخلّي العميل يقرّر من تاني.
+
+`POST /api/v1/me/custom-requests/REQ-2026-000001/accept` بجسم `{"quotedAmount":4500}` بعد ما الأدمن عدّل السعر لـ6000 — **رد حقيقي، `409`**:
+```json
+{"detail":"The quote changed after you saw it. Reload the request to see the new price","instance":"/api/v1/me/custom-requests/REQ-2026-000001/accept","status":409,"title":"Conflict","type":"/errors/quote-changed","code":"QUOTE_CHANGED","timestamp":"2026-10-27T19:56:17.528073600+03:00"}
+```
+
+نفس النداء بجسم `{"quotedAmount":6000}` — **رد حقيقي، `200`** (الطلب بقى `ACCEPTED` والزرارين اتقفلوا):
+```json
+{"requestNumber":"REQ-2026-000001","type":"SIZE_VARIANT","status":"ACCEPTED","submittedAt":"2026-10-27T16:56:16.8575901Z","product":{"slug":"custom-req-product-599b5ce9","name":"custom-req-product-599b5ce9"},"description":"أريده أعرض قليلاً","quantity":2,"widthCm":120.00,"heightCm":80.00,"quotedAmount":6000.0000,"quotedAt":"2026-10-27T16:56:17.344Z","canAccept":false,"canReject":false}
+```
+
+`POST .../reject` على الطلب ده بعد ما اتقبل — **رد حقيقي، `409`**:
+```json
+{"detail":"This request was already accepted, so its quote cannot be rejected","instance":"/api/v1/me/custom-requests/REQ-2026-000001/reject","status":409,"title":"Conflict","type":"/errors/quote-already-answered","code":"QUOTE_ALREADY_ANSWERED","timestamp":"2026-10-27T19:56:17.621238500+03:00"}
+```
+
+`GET /api/v1/me/custom-requests/REQ-2099-999999` (مش موجود، **ونفس الرد بالظبط** لطلب مش بتاعي أو طلب ضيف) — **رد حقيقي، `404`**:
+```json
+{"detail":"Custom request not found","instance":"/api/v1/me/custom-requests/REQ-2099-999999","status":404,"title":"Not Found","type":"/errors/custom-request-not-found","code":"CUSTOM_REQUEST_NOT_FOUND","timestamp":"2026-10-27T19:56:17.663253800+03:00"}
+```
+شكل الخطأ دايمًا: `detail` و`instance` و`status` و`title` و`type` و`code` و`timestamp`. **اعتمد على `code`** (النص في `detail` إنجليزي وللعرض للمطوّر، مش للعميل).
+
+**التكرار والتسابق:**
+- ضغط مرتين على «قبول» (أو الأدمن قبل بالتليفون قبله بنفس السعر) ⇒ **`200`** بالحالة الحالية، **مش خطأ**. نفس الشيء لـ«رفض» على طلب مرفوض.
+- **التعارض بس لما النتيجتين تتضاد** (قبول ضد رفض): **`409 QUOTE_ALREADY_ANSWERED`**. اعمل reload واعرض الحالة الحالية: «الطلب ده اتقبل/اترفض بالفعل».
+- السيرفر بياخد قفل على الطلب (زي الأدمن)، فاللي يسبق يكسب، واللي بعده بياخد الكود ده مش 500.
+
+**اللي العميل مش بيشوفه (عن قصد):**
+- **مفيش سبب لطلب مرفوض، ومفيش رسالة مع السعر.** حقل الملاحظة الوحيد داخلي (للورشة)، وبيحمل كمان سبب الرفض الإلزامي، فمستحيل نعرضه. الورشة بتشرح الاتنين **بالتليفون**. ما تعملوش حقل «ملاحظة الأدمن» في صفحة العميل، وما تعملوش خانة «سبب الرفض» للعميل (مفيش مكان يتخزّن فيه).
+- مفيش بريد ولا إشعار لما سعر بيوصل. **الـ badge هو الطريقة الوحيدة:** نادي `GET /me/custom-requests/summary` بعد الدخول وعند فتح الموقع، واعرض `awaitingResponse` لو أكبر من صفر. العدّاد «في انتظار ردّك» ويفضل ظاهر لحد ما يرد — مش «جديد من آخر زيارة».
+- **طلبات الضيف مش بتظهر هنا أبدًا** حتى لو الموبايل متطابق، وطلب مش بتاعي بيرجع `404 CUSTOM_REQUEST_NOT_FOUND` زي طلب مش موجود.
+
+**الأخطاء:** `QUOTE_CHANGED` (409) · `QUOTE_ALREADY_ANSWERED` (409) · `CUSTOM_REQUEST_QUOTE_REQUIRED` (409، لسه ما اتسعّرش) · `CUSTOM_REQUEST_NOT_FOUND` (404) · `VALIDATION_FAILED` (400، `quotedAmount` ناقص أو مش موجب) — التفاصيل في قسم ٤.
 
 ### أدمن (`ROLE_ADMIN`، غير كده 403)
 
@@ -329,6 +393,14 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 - **كل مستندات الـ PDF بالأرقام اللاتينية:** `1,000.00` مش `١٬٠٠٠٫٠٠`، والتاريخ ميلادي `2026-10-27`. اعرض الأرقام في الواجهة بنفس الشكل للاتساق.
 - **الإيميل:** إيميل تأكيد الطلب لسه بيطبع المبالغ بأربع خانات عشرية (`1140.0000 EGP`) — ده عيب معروف في قسم ٨، مش من V20.
 
+### ١٥) سجل التدقيق بقى فيه قرارات العملاء: اقرا `actorKind` (V22)
+
+العميل المسجّل دلوقتي بيقبل أو يرفض سعره بنفسه (قسم ٢)، فسجل التدقيق (`GET /admin/audit`) مش بس أفعال موظفين.
+- **كل صف فيه حقل جديد `actorKind`**: `STAFF` · `CUSTOMER` · `SYSTEM` (مفيش شخص).
+- اسم المنفّذ (`actorName`) لوحده **مش بيفرّق** عميل عن موظف. شاشة بتعرض «<الاسم> قبل السعر» من غير `actorKind` بتعرض **قرار العميل كأنه قرار موظف** — سجل غلط عن مين قرر إيه. اعرض جنب الاسم «(عميل)» لما `actorKind = CUSTOMER`.
+- أكشنات جديدة: `CUSTOM_REQUEST_ACCEPTED_BY_CUSTOMER` و`CUSTOM_REQUEST_REJECTED_BY_CUSTOMER` (فلتر `?action=`). قبول الموظف بالتليفون لسه `CUSTOM_REQUEST_STATUS_CHANGED` زي ما كان.
+- لوحة التحكم (`/admin/dashboard`) **مبتقراش من سجل التدقيق**، فمفيش حاجة تتغير فيها.
+
 ---
 
 ## ٤. أكواد الأخطاء الجديدة
@@ -348,6 +420,8 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 | `SLUG_ALREADY_EXISTS` | 409 | slug صريح مستخدم (منتج، وبقى للمعرض كمان) | "الـ slug مستخدم" |
 | `CATEGORY_SCOPE_MISMATCH` | 400 | التصنيف في النطاق الغلط: منتج في تصنيف `PORTFOLIO`، أو عنصر معرض في تصنيف `PRODUCT`، أو تصنيف فرعي نطاقه مختلف عن أبوه (إنشاء **وتعديل**) | "التصنيف ده مش مناسب هنا، اختار من القايمة". معناه غالبًا إن الفورم بيعرض تصنيفات من غير `?scope=` الصح — صلّح القايمة، ما تكتفيش بالرسالة |
 | `CATEGORY_SCOPE_IN_USE` | 409 | تغيير `scope` لتصنيف فيه أولاد أو منتجات أو عناصر معرض (المؤرشفة بتتحسب) | "مينفعش تغيّر نوع تصنيف فيه محتوى، انقل اللي فيه الأول". والأحسن تعطّل حقل النطاق قبل ما يوصل للخطأ |
+| `QUOTE_CHANGED` | 409 | العميل بيقبل سعر الأدمن عدّله بعد ما العميل شافه (أو اتقبل بسعر تاني) — **ومفيش حاجة اتقبلت** | reload للطلب (`GET .../{requestNumber}`)، واعرض السعر الجديد وتاريخه: «السعر اتغيّر، راجعه من تاني» |
+| `QUOTE_ALREADY_ANSWERED` | 409 | قبول طلب مرفوض، أو رفض طلب مقبول (الأدمن بالتليفون سبقك أو العميل في تاب تاني) | reload واعرض الحالة الحالية: «الطلب ده اتقبل/اترفض بالفعل». شيّل الزرارين |
 | `SLUG_RESERVED` | 400 | slug عنصر معرض = `categories` (مسار ثابت تحت `/portfolio`)، في الإنشاء أو التعديل | اعرض `detail` من السيرفر (فيه السبب) جنب حقل الـ slug: "الاسم ده محجوز للنظام، اختار slug تاني" |
 | `RATE_LIMITED` | 429 | تجاوز حد المعدل (قسم ٥) | "حاول بعد شوية" |
 

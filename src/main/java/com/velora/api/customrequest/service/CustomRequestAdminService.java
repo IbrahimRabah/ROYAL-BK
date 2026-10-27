@@ -21,6 +21,7 @@ import com.velora.api.shipping.service.ShippingService;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -159,6 +160,10 @@ public class CustomRequestAdminService {
         boolean amountChanged = previous == null || previous.compareTo(rounded) != 0;
 
         request.setQuotedAmount(rounded);
+        if (amountChanged || request.getQuotedAt() == null) {
+            // A revised price is a new quote with a new age; saving the same amount again is not.
+            request.setQuotedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        }
         if (note != null && !note.isBlank()) {
             request.setAdminNote(note.trim());
         }

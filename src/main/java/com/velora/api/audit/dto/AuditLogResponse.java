@@ -17,6 +17,11 @@ public record AuditLogResponse(
         Long actorId,
         @Schema(description = "Copied at write time — the account may be renamed later")
         String actorName,
+        @Schema(description = "Who KIND of actor this was: CUSTOMER (a customer acting on their "
+                + "own account, e.g. accepting their own quote), SYSTEM (no person) or STAFF. "
+                + "actorName alone cannot tell a customer from staff - render this next to it.",
+                allowableValues = {"STAFF", "CUSTOMER", "SYSTEM"})
+        String actorKind,
         OffsetDateTime createdAt
 ) {
 }

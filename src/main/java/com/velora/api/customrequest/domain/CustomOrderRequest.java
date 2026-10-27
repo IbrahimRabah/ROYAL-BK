@@ -18,6 +18,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
@@ -113,7 +114,18 @@ public class CustomOrderRequest extends BaseAuditEntity {
     @Column(name = "quoted_amount", precision = 19, scale = 4)
     private BigDecimal quotedAmount;
 
-    /** The latest staff note. Earlier ones live in the audit log. */
+    /**
+     * When the current {@link #quotedAmount} was set. Moves when the amount changes, not when the
+     * same amount is saved again. Null until quoted.
+     */
+    @Column(name = "quoted_at")
+    private OffsetDateTime quotedAt;
+
+    /**
+     * The latest STAFF note. Internal: nothing the customer calls ever returns it, because this
+     * one box holds both pricing notes and the mandatory reason for a rejection.
+     * Earlier ones live in the audit log.
+     */
     @Column(name = "admin_note", length = 1000)
     private String adminNote;
 
