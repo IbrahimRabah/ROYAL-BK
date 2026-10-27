@@ -29,7 +29,9 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("placedAt"), Sort.Order.desc("id"));
 
     private final OrderRepository orderRepository;
     private final OrderStatusHistoryRepository historyRepository;
@@ -103,20 +107,26 @@ public class OrderService {
 
     // ------------------------------------------------------------------- admin
 
+    /**
+     * Newest first unless the caller asks for another sort — the same on every path. Without an
+     * ORDER BY the unfiltered list came back in whatever order SQL Server chose (in practice
+     * oldest first) while the filtered ones were newest first. The id breaks ties between
+     * orders placed in the same millisecond, so paging never repeats or skips a row.
+     */
     @Transactional(readOnly = true)
     public PageResponse<OrderSummaryResponse> listForAdmin(String status, String phone,
                                                            Pageable pageable, String locale) {
+        Pageable ordered = pageable.getSort().isSorted() ? pageable
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), NEWEST_FIRST);
         Page<CustomerOrder> page;
 
         if (phone != null && !phone.isBlank()) {
             String normalized = PhoneNormalizer.toE164(phone);
-            page = orderRepository.findByContactPhoneOrderByPlacedAtDesc(
-                    normalized == null ? phone : normalized, pageable);
+            page = orderRepository.findByContactPhone(normalized == null ? phone : normalized, ordered);
         } else if (status != null && !status.isBlank()) {
-            page = orderRepository.findByFulfillmentStatusOrderByPlacedAtDesc(
-                    parseFulfillment(status), pageable);
+            page = orderRepository.findByFulfillmentStatus(parseFulfillment(status), ordered);
         } else {
-            page = orderRepository.findAll(pageable);
+            page = orderRepository.findAll(ordered);
         }
         return PageResponse.from(page, order -> toSummary(order, locale));
     }

@@ -3,11 +3,13 @@ package com.velora.api.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.velora.api.audit.domain.AuditAction;
 import com.velora.api.audit.domain.AuditLog;
 import com.velora.api.audit.repository.AuditLogRepository;
@@ -795,6 +797,48 @@ class OrderDeliveryScheduleIntegrationTest {
 
         assertThat(dashboardQueries.staleOrders(24).stream().map(DashboardResponse.StaleOrder::orderId))
                 .doesNotContain(orderId);
+    }
+
+    // ============================================================ admin list ordering
+
+    @Test
+    @DisplayName("GET /admin/orders is newest first with no filter, with a status filter and with a phone filter")
+    void adminListIsNewestFirstOnEveryPath() throws Exception {
+        Long first = placeOrder(1);
+        Long second = placeOrder(1);
+        Long third = placeOrder(1);
+        List<Long> newestFirst = List.of(third, second, first);
+
+        assertThat(ours(adminList(), newestFirst)).as("no filter").isEqualTo(newestFirst);
+        assertThat(ours(adminList("status", "PENDING"), newestFirst)).as("status filter").isEqualTo(newestFirst);
+        assertThat(ours(adminList("phone", PHONE_LOCAL), newestFirst)).as("phone filter").isEqualTo(newestFirst);
+    }
+
+    @Test
+    @DisplayName("An explicit sort is honoured on every path, not only the unfiltered one")
+    void adminListHonoursAnExplicitSort() throws Exception {
+        Long first = placeOrder(1);
+        Long second = placeOrder(1);
+        List<Long> oldestFirst = List.of(first, second);
+
+        assertThat(ours(adminList("sort", "placedAt,asc"), oldestFirst)).as("no filter").isEqualTo(oldestFirst);
+        assertThat(ours(adminList("phone", PHONE_LOCAL, "sort", "placedAt,asc"), oldestFirst))
+                .as("phone filter").isEqualTo(oldestFirst);
+    }
+
+    private List<Long> adminList(String... params) throws Exception {
+        var request = get("/api/v1/admin/orders").with(admin()).param("size", "100");
+        for (int i = 0; i < params.length; i += 2) {
+            request = request.param(params[i], params[i + 1]);
+        }
+        String json = mvc.perform(request).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.<List<Number>>read(json, "$.content[*].id").stream().map(Number::longValue).toList();
+    }
+
+    /** The test's own orders, in the order the endpoint returned them. */
+    private static List<Long> ours(List<Long> returned, List<Long> mine) {
+        return returned.stream().filter(mine::contains).toList();
     }
 
     // =================================================================== helpers

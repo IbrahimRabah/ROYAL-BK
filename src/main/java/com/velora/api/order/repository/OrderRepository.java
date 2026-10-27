@@ -36,11 +36,11 @@ public interface OrderRepository
 
     Page<CustomerOrder> findByCustomerIdOrderByPlacedAtDesc(Long customerId, Pageable pageable);
 
-    Page<CustomerOrder> findByFulfillmentStatusOrderByPlacedAtDesc(
-            FulfillmentStatus status, Pageable pageable);
+    /** Unordered on purpose: {@code OrderService.listForAdmin} owns the sort for every admin path. */
+    Page<CustomerOrder> findByFulfillmentStatus(FulfillmentStatus status, Pageable pageable);
 
-    /** Support lookup — the customer rings and gives a phone number. */
-    Page<CustomerOrder> findByContactPhoneOrderByPlacedAtDesc(String phone, Pageable pageable);
+    /** Support lookup — the customer rings and gives a phone number. Ordering as above. */
+    Page<CustomerOrder> findByContactPhone(String phone, Pageable pageable);
 
     /**
      * Delivered COD orders whose cash has not been remitted by the courier yet.
