@@ -138,7 +138,8 @@ public class SearchSuggestionService {
             }
             // Only what the shop menu can reach: a category under an inactive parent is not in it.
             if (reachableFromMenu(category, activeIds) && matches(category, words)) {
-                out.add(new CategorySuggestion(category.nameFor(locale), category.getSlug()));
+                out.add(new CategorySuggestion(
+                        category.getId(), category.nameFor(locale), category.getSlug()));
             }
         }
         return out;

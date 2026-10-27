@@ -538,12 +538,12 @@ All endpoints in this section are public (no auth). Response locale is resolved 
     { "name": "كرسي خشب زان", "slug": "kursi-khashab-zan", "imageUrl": "http://localhost:8080/uploads/products/2026/10/chair.png", "price": 1450.0000 },
     { "name": "كرسي حديد مشغول", "slug": "kursi-hadid-mashghul", "price": 980.0000 }
   ],
-  "categories": [ { "name": "كراسي", "slug": "chairs" } ]
+  "categories": [ { "id": 7, "name": "كراسي", "slug": "chairs" } ]
 }
 ```
 - **Both lists are always present**, empty when nothing matches. A missing or blank `q`, one that is shorter than 2 letters after Arabic folding, or only punctuation, is `200` with two empty lists — **never an error, and never `404`**.
 - `ProductSuggestion`: `name` (language of `Accept-Language`, `ar` default), `slug`, `imageUrl` (absent when the product has none), `price` (the lowest price among its active variants — a "from" price, tax-inclusive; absent when no variant is on sale). Nothing else.
-- `CategorySuggestion`: `name`, `slug`.
+- `CategorySuggestion`: `id` (the same id `GET /api/v1/categories/tree` returns for that category, so a client that addresses categories by id needs no lookup), `name`, `slug` (what goes in the URL, so each row can be a real link). Products carry no `id`: their slug builds the link.
 - **Products** match exactly as `GET /api/v1/products?q=` does: `ACTIVE` and not archived; the normalized name and short description, in **either** language, or the slug. Newest first. A suggestion therefore never disagrees with the results page.
 - **Categories** are `PRODUCT`-scope, active, and reachable from the shop menu (no inactive ancestor), in menu order. A `PORTFOLIO` category never appears. An empty category does (like the menu).
 - **Arabic spelling is folded on the server** by `ArabicNormalizer` (alef forms, ة/ه, ى/ي, tashkeel, tatweel): `اثاث` finds `أثاث`, `كرسى` finds `كرسي`, `طاوله` finds `طاولة`, `سرير` finds `سريــر`. Several words match in order.

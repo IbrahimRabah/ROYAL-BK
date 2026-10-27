@@ -513,7 +513,7 @@ ACTIVE|DRAFT ──archive──► ARCHIVED ──publish──► ACTIVE   (pu
 | `GET /categories/tree` | شجرة التصنيفات | — | قائمة (غير مرقّمة) | — |
 | `GET /categories/{slug}` | صفحة تصنيف | — | `CategoryDetailResponse` | — |
 | `GET /categories/filters` | محاور الفلترة | `categoryId?` | `FilterFacetsResponse` | — |
-| `GET /search/suggestions` | اقتراحات صندوق البحث | `q?` | `{products[≤6]:{name,slug,imageUrl?,price?}, categories[≤4]:{name,slug}}` | القائمتان دائمًا موجودتان (فاضيتان عند لا مطابقة أو أقل من حرفين؛ لا خطأ ولا 404). التفاصيل والتكلفة في 2.10 |
+| `GET /search/suggestions` | اقتراحات صندوق البحث | `q?` | `{products[≤6]:{name,slug,imageUrl?,price?}, categories[≤4]:{id,name,slug}}` | القائمتان دائمًا موجودتان (فاضيتان عند لا مطابقة أو أقل من حرفين؛ لا خطأ ولا 404). التفاصيل والتكلفة في 2.10 |
 | `GET /brands` | العلامات الفعّالة | — | قائمة مرتبة بـ`nameAr` | غير مرقّمة |
 | `GET /variants/{id}/availability` | توفر متغيّر الآن | — | `{variantId, sku, price, availableQty, inStock, sellable}` | `VARIANT_NOT_FOUND` 404. **يكشف الكمية المتاحة الدقيقة للعامة.** |
 | `GET /portfolio` ، `GET /portfolio/{slug}` | معرض الأعمال المنشورة | `categoryId?`, `page`,`size`(12) | `PageResponse<PortfolioSummaryResponse>` / `PortfolioDetailResponse` | 404 لغير منشور/مؤرشف/مجهول |

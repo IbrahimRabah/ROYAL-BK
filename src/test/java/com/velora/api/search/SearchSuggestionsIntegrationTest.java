@@ -213,15 +213,23 @@ class SearchSuggestionsIntegrationTest {
     // ============================================================== categories
 
     @Test
-    @DisplayName("A category match carries the name and slug only")
+    @DisplayName("A category match carries the id, name and slug - the id being the one the category tree uses")
     void categoryMatchShape() throws Exception {
-        category("غرفة معيشة " + tag, "PRODUCT", true);
+        long id = category("غرفة معيشة " + tag, "PRODUCT", true);
 
         String body = suggest("معيشه " + tag);
 
         Map<String, Object> row = JsonPath.read(body, "$.categories[0]");
-        assertThat(row.keySet()).containsExactlyInAnyOrder("name", "slug");
+        assertThat(row.keySet()).containsExactlyInAnyOrder("id", "name", "slug");
+        assertThat(((Number) row.get("id")).longValue()).isEqualTo(id);
         assertThat(row.get("name")).isEqualTo("غرفة معيشة " + tag);
+
+        // The same id, with the same slug, is what the shop's category tree returns for it.
+        String tree = mvc.perform(get("/api/v1/categories/tree")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<Integer> treeIds = JsonPath.read(tree, "$..[?(@.slug=='" + row.get("slug") + "')].id");
+        assertThat(treeIds).hasSize(1);
+        assertThat(treeIds.get(0).longValue()).isEqualTo(id);
     }
 
     @Test

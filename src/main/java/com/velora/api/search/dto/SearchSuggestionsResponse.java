@@ -30,8 +30,10 @@ public record SearchSuggestionsResponse(
 
     @Schema(description = "One category row of the suggestion list")
     public record CategorySuggestion(
+            @Schema(description = "The category's id, for a client that addresses categories by id "
+                    + "(the same id the category tree returns)") Long id,
             String name,
-            @Schema(description = "Open the category page with this") String slug
+            @Schema(description = "Goes in the URL") String slug
     ) {
     }
 }
