@@ -70,7 +70,7 @@ Object-level checks (does this order/address/invoice belong to the caller?) happ
 ## Table of contents
 
 1. [Identity & Authentication](#identity--authentication) — `/api/v1/auth`
-2. [Catalog — Storefront](#catalog--storefront) — `/api/v1/products`, `/categories`, `/brands`, `/variants`
+2. [Catalog — Storefront](#catalog--storefront) — `/api/v1/products`, `/categories`, `/brands`, `/variants`, `/search/suggestions`
 3. [Catalog — Admin](#catalog--admin) — `/api/v1/admin/products`, `/variants`, `/categories`, `/brands`, `/attributes`
 4. [Cart & Checkout](#cart--checkout) — `/api/v1/cart`, `/api/v1/orders`
 5. [Orders](#orders) — `/api/v1/me/orders`, `/api/v1/admin/orders`
@@ -520,6 +520,37 @@ All endpoints in this section are public (no auth). Response locale is resolved 
 `availableQty = qty_on_hand - qty_reserved`; `inStock = availableQty > 0`; `sellable` = variant is `ACTIVE`, not archived, and in stock — gate add-to-cart on `sellable`, not `inStock` alone.
 
 **Error responses:** `404 VARIANT_NOT_FOUND`.
+
+---
+
+### SearchController
+
+#### `GET /api/v1/search/suggestions`
+**Auth:** Public — no token.
+**Summary:** Type-ahead for the search box: up to 6 products and 4 categories matching what has been typed so far.
+
+**Query params:** `q` (optional string; at most 60 characters are used).
+
+**Success response `200`:**
+```json
+{
+  "products": [
+    { "name": "كرسي خشب زان", "slug": "kursi-khashab-zan", "imageUrl": "http://localhost:8080/uploads/products/2026/10/chair.png", "price": 1450.0000 },
+    { "name": "كرسي حديد مشغول", "slug": "kursi-hadid-mashghul", "price": 980.0000 }
+  ],
+  "categories": [ { "name": "كراسي", "slug": "chairs" } ]
+}
+```
+- **Both lists are always present**, empty when nothing matches. A missing or blank `q`, one that is shorter than 2 letters after Arabic folding, or only punctuation, is `200` with two empty lists — **never an error, and never `404`**.
+- `ProductSuggestion`: `name` (language of `Accept-Language`, `ar` default), `slug`, `imageUrl` (absent when the product has none), `price` (the lowest price among its active variants — a "from" price, tax-inclusive; absent when no variant is on sale). Nothing else.
+- `CategorySuggestion`: `name`, `slug`.
+- **Products** match exactly as `GET /api/v1/products?q=` does: `ACTIVE` and not archived; the normalized name and short description, in **either** language, or the slug. Newest first. A suggestion therefore never disagrees with the results page.
+- **Categories** are `PRODUCT`-scope, active, and reachable from the shop menu (no inactive ancestor), in menu order. A `PORTFOLIO` category never appears. An empty category does (like the menu).
+- **Arabic spelling is folded on the server** by `ArabicNormalizer` (alef forms, ة/ه, ى/ي, tashkeel, tatweel): `اثاث` finds `أثاث`, `كرسى` finds `كرسي`, `طاوله` finds `طاولة`, `سرير` finds `سريــر`. Several words match in order.
+- Out of scope: typo tolerance, synonyms, analytics. The match is a substring after folding.
+- Called per keystroke — debounce (~250 ms) and drop stale responses. Cost note: the product match scans `search_text`; see `ROYAL_BUSINESS_RULES.md` §2.10 for the catalogue sizes where that stops being cheap.
+
+**Error responses:** none beyond the global conventions.
 
 ---
 
