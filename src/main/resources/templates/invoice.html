@@ -209,7 +209,12 @@
         }
     </style>
 </head>
-<body>
+<!--
+     showTax: the tax rows, the net column and the net/tax breakdown print only when the invoice
+     actually carries tax. While the company is not VAT-registered every rate is zero, so the
+     invoice reads as a plain total; an invoice issued at 14% before that still shows its tax.
+-->
+<body th:with="showTax=${view.taxTotal.signum() > 0}">
 
 <div th:if="${view.cancelled}" class="cancelled-banner">
     فاتورة ملغاة
@@ -232,21 +237,11 @@
                     <br th:if="${view.sellerEmail != null}"/>
                     <span th:if="${view.sellerEmail != null}" class="ltr"
                           th:text="${view.sellerEmail}"></span>
-                    <!-- Omitted entirely when unset. A wrong tax number on a legal
-                         document is worse than none. -->
-                    <br th:if="${view.sellerTaxNumber != null}"/>
-                    <span th:if="${view.sellerTaxNumber != null}">
-                        الرقم الضريبي: <span class="ltr" th:text="${view.sellerTaxNumber}"></span>
-                    </span>
-                    <br th:if="${view.sellerCommercialRegister != null}"/>
-                    <span th:if="${view.sellerCommercialRegister != null}">
-                        السجل التجاري:
-                        <span class="ltr" th:text="${view.sellerCommercialRegister}"></span>
-                    </span>
                 </div>
             </td>
             <td class="doc-box">
-                <div class="doc-title">فاتورة ضريبية</div>
+                <!-- The title describes THIS document: one issued with tax stays a tax invoice. -->
+                <div class="doc-title" th:text="${showTax} ? 'فاتورة ضريبية' : 'فاتورة'">فاتورة</div>
                 <div class="doc-meta">
                     <span class="label">رقم الفاتورة:</span>
                     <span class="ltr" th:text="${view.invoiceNumber}">VLR-INV-2026-000001</span>
@@ -288,12 +283,12 @@
     <thead>
     <tr>
         <th style="width: 6%">#</th>
-        <th class="right" style="width: 30%">الصنف</th>
+        <th class="right" th:style="${showTax} ? 'width: 30%' : 'width: 50%'">الصنف</th>
         <th style="width: 8%">الكمية</th>
         <th style="width: 12%">سعر الوحدة</th>
         <th style="width: 11%">الخصم</th>
-        <th style="width: 12%">الصافي</th>
-        <th style="width: 8%">الضريبة</th>
+        <th th:if="${showTax}" style="width: 12%">الصافي</th>
+        <th th:if="${showTax}" style="width: 8%">الضريبة</th>
         <th style="width: 13%">الإجمالي</th>
     </tr>
     </thead>
@@ -315,11 +310,11 @@
             th:text="${line.discount.signum() > 0}
                      ? ${#numbers.formatDecimal(line.discount, 1, 'COMMA', 2, 'POINT')}
                      : '—'">—</td>
-        <td class="num"
+        <td class="num" th:if="${showTax}"
             th:text="${#numbers.formatDecimal(line.netAmount, 1, 'COMMA', 2, 'POINT')}">
             0.00
         </td>
-        <td class="num"
+        <td class="num" th:if="${showTax}"
             th:text="${#numbers.formatDecimal(line.taxRatePercent, 1, 'COMMA', 0, 'POINT')} + '%'">
             14%
         </td>
@@ -335,8 +330,8 @@
     <tr>
         <td>
             <div class="payment-note">
-                جميع الأسعار شاملة ضريبة القيمة المضافة.
-                <br/>
+                <span th:if="${showTax}">جميع الأسعار شاملة ضريبة القيمة المضافة.</span>
+                <br th:if="${showTax}"/>
                 المبلغ الظاهر في خانة الإجمالي هو المبلغ المستحق.
             </div>
         </td>
@@ -359,7 +354,9 @@
                 <tr>
                     <td class="label">الشحن</td>
                     <td class="value"
-                        th:text="${#numbers.formatDecimal(view.shippingCost, 1, 'COMMA', 2, 'POINT')}">
+                        th:text="${view.shippingCost.signum() == 0}
+                                 ? 'مجاني'
+                                 : ${#numbers.formatDecimal(view.shippingCost, 1, 'COMMA', 2, 'POINT')}">
                         0.00
                     </td>
                 </tr>
@@ -377,14 +374,14 @@
                         0.00
                     </td>
                 </tr>
-                <tr class="sep">
+                <tr class="sep" th:if="${showTax}">
                     <td class="label">الصافي قبل الضريبة</td>
                     <td class="value"
                         th:text="${#numbers.formatDecimal(view.netTotal, 1, 'COMMA', 2, 'POINT')}">
                         0.00
                     </td>
                 </tr>
-                <tr>
+                <tr th:if="${showTax}">
                     <td class="label">قيمة الضريبة</td>
                     <td class="value"
                         th:text="${#numbers.formatDecimal(view.taxTotal, 1, 'COMMA', 2, 'POINT')}">

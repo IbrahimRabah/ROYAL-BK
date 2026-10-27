@@ -33,7 +33,8 @@ public class AdminExportController {
     @Operation(summary = "Accounting archive (Excel)",
             description = """
                     One row per order with a totals row: customer, governorate, subtotal,
-                    discount, shipping, grand total, tax and net.
+                    discount, shipping, grand total, tax and net. The tax and net columns are
+                    left out when none of the exported orders carries tax.
 
                     Money is written as real numbers, not formatted text, so the accountant
                     can sum a column and pivot without retyping anything. The sheet is

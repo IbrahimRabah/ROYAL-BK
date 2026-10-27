@@ -68,11 +68,13 @@ public class ProductVariant extends BaseAuditEntity {
     private BigDecimal costPrice;
 
     /**
-     * Egyptian VAT, the rate a variant gets when none is given. There is deliberately no
+     * The rate a variant gets when none is given: zero while the company is not registered for
+     * VAT. If it registers, set this back to {@code 0.1400} (and the {@code df_var_tax} default
+     * with it) and give the variants their rate in the admin. There is deliberately no
      * application setting for it: the rate that matters is each variant's own {@code taxRate},
      * copied onto every order line when it is bought.
      */
-    public static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.1400");
+    public static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.0000");
 
     @Column(name = "tax_rate", nullable = false, precision = 5, scale = 4)
     private BigDecimal taxRate = DEFAULT_TAX_RATE;

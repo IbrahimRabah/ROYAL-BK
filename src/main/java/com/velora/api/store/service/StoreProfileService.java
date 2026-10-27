@@ -97,12 +97,9 @@ public class StoreProfileService {
         if (profile.getEmail() == null) {
             missing.add("email");
         }
-        if (!profile.hasTaxNumber()) {
-            missing.add("taxNumber");
-        }
-        if (!profile.hasCommercialRegister()) {
-            missing.add("commercialRegister");
-        }
+        // taxNumber and commercialRegister are deliberately not reported: the invoice no longer
+        // prints them, so a warning the admin can never clear would only teach them to ignore
+        // every warning on this screen.
 
         return new StoreProfileResponse(
                 profile.getLegalName(),

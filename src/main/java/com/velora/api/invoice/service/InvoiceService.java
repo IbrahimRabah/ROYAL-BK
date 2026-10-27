@@ -133,7 +133,9 @@ public class InvoiceService {
 
         int year = LocalDate.now().getYear();
         int sequence = allocateNumber(year);
-        String invoiceNumber = "%s-%d-%06d".formatted(
+        // Locale.ROOT: %d follows the JVM's default locale, and on an Arabic-locale server it
+        // would write the number of a legal document in Arabic-Indic digits.
+        String invoiceNumber = String.format(java.util.Locale.ROOT, "%s-%d-%06d",
                 branding.getInvoiceNumberPrefix(), year, sequence);
 
         Invoice invoice = new Invoice();

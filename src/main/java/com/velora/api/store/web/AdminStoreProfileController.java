@@ -27,8 +27,10 @@ public class AdminStoreProfileController {
     }
 
     @Operation(summary = "Current seller details",
-            description = "`missingFields` lists what is still empty. Empty fields are "
-                    + "omitted from the invoice rather than printed blank.")
+            description = "`missingFields` lists what is still empty (address, phone, email). "
+                    + "Empty fields are omitted from the invoice rather than printed blank. "
+                    + "The tax number and commercial register are not listed: the invoice "
+                    + "does not print them.")
     @GetMapping
     public StoreProfileResponse get() {
         return storeProfileService.get();

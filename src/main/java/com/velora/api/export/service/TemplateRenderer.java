@@ -14,6 +14,15 @@ import org.thymeleaf.context.Context;
 @Service
 public class TemplateRenderer {
 
+    /**
+     * Arabic, with Latin digits. Plain {@code ar} makes {@code #numbers.formatDecimal} print
+     * Arabic-Indic digits (٨٥٠.٠٠), which is not how commercial documents are written in Egypt
+     * and cannot be typed into an accounting system as it stands. The {@code nu-latn} extension
+     * changes the digits only; the language, direction and layout are the template's own.
+     */
+    private static final java.util.Locale DOCUMENT_LOCALE =
+            java.util.Locale.forLanguageTag("ar-u-nu-latn");
+
     private final TemplateEngine templateEngine;
 
     public TemplateRenderer(TemplateEngine templateEngine) {
@@ -22,13 +31,13 @@ public class TemplateRenderer {
 
     /** Several variables at once, for templates that need more than one model object. */
     public String render(String templateName, java.util.Map<String, Object> variables) {
-        Context context = new Context(new java.util.Locale("ar"));
+        Context context = new Context(DOCUMENT_LOCALE);
         context.setVariables(variables);
         return templateEngine.process(templateName, context);
     }
 
     public String render(String templateName, String variableName, Object model) {
-        Context context = new Context(new java.util.Locale("ar"));
+        Context context = new Context(DOCUMENT_LOCALE);
         context.setVariable(variableName, model);
         return templateEngine.process(templateName, context);
     }

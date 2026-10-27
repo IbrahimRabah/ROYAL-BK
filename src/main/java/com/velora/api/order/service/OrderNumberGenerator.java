@@ -46,7 +46,9 @@ public class OrderNumberGenerator {
         String datePart = LocalDate.now().format(DATE);
 
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            String candidate = "%s-%s-%04d".formatted(
+            // Locale.ROOT throughout: %d would follow the JVM's default locale, and an order
+            // number in Arabic-Indic digits is not the one the customer is told or looks up.
+            String candidate = String.format(java.util.Locale.ROOT, "%s-%s-%04d",
                     prefix, datePart, random.nextInt(SUFFIX_BOUND));
 
             // 10,000 suffixes per day is plenty at this volume; a collision just
@@ -59,7 +61,7 @@ public class OrderNumberGenerator {
 
         // Past 20 collisions the day's space is genuinely crowded. Widen it rather
         // than fail the customer's order.
-        String fallback = "%s-%s-%06d".formatted(
+        String fallback = String.format(java.util.Locale.ROOT, "%s-%s-%06d",
                 prefix, datePart, random.nextInt(1_000_000));
         log.warn("Order number space crowded for {}; widened the suffix", datePart);
         return fallback;

@@ -277,9 +277,9 @@ public class RemittanceService {
 
     /** REM-2026-0001. Sequential within the year; a gap here costs nothing. */
     private String nextReference() {
-        String prefix = "REM-%d-".formatted(LocalDate.now().getYear());
+        String prefix = String.format(java.util.Locale.ROOT, "REM-%d-", LocalDate.now().getYear());
         int next = remittanceRepository.highestSequenceFor(prefix) + 1;
-        return "%s%04d".formatted(prefix, next);
+        return String.format(java.util.Locale.ROOT, "%s%04d", prefix, next);
     }
 
     private RemittanceResponse toResponse(CodRemittance remittance) {

@@ -151,7 +151,7 @@ public class CustomRequestService {
         int sequence = allocateNumber(year);
         request.setFiscalYear(year);
         request.setSequenceNumber(sequence);
-        request.setRequestNumber("REQ-%d-%06d".formatted(year, sequence));
+        request.setRequestNumber(String.format(Locale.ROOT, "REQ-%d-%06d", year, sequence));
 
         CustomOrderRequest saved = requestRepository.save(request);
 

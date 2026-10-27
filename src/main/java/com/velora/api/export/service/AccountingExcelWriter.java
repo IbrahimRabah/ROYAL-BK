@@ -48,6 +48,10 @@ public class AccountingExcelWriter {
             18, 17, 20, 14, 14, 18, 9, 8, 14, 11, 10, 11, 16, 14, 12, 14, 12, 13, 16
     };
 
+    /** Logical positions of the "منه ضريبة" and "الصافي" columns in {@link #HEADERS}. */
+    private static final int TAX_COLUMN = 14;
+    private static final int NET_COLUMN = 15;
+
     public byte[] write(List<CustomerOrder> orders, String title) {
         try (Workbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -58,20 +62,29 @@ public class AccountingExcelWriter {
 
             Styles styles = new Styles(workbook);
 
+            // No tax in the exported orders (the company is not VAT-registered, or the range holds
+            // only such orders): the tax and net columns are left out instead of printing zeros.
+            // A range that includes an order taxed earlier keeps them, for every row.
+            boolean showTax = orders.stream()
+                    .anyMatch(o -> MoneyUtils.nullSafe(o.getTaxTotal()).signum() != 0);
+            int[] pos = columnPositions(showTax);
+
             int rowIndex = 0;
-            rowIndex = writeTitle(sheet, styles, title, rowIndex);
-            rowIndex = writeHeader(sheet, styles, rowIndex);
+            rowIndex = writeTitle(sheet, styles, title, rowIndex, pos);
+            rowIndex = writeHeader(sheet, styles, rowIndex, pos);
 
             Totals totals = new Totals();
             for (CustomerOrder order : orders) {
-                writeOrder(sheet, styles, order, rowIndex++);
+                writeOrder(sheet, styles, order, rowIndex++, pos);
                 totals.add(order);
             }
 
-            writeTotals(sheet, styles, totals, orders.size(), rowIndex);
+            writeTotals(sheet, styles, totals, orders.size(), rowIndex, pos);
 
             for (int i = 0; i < WIDTHS.length; i++) {
-                sheet.setColumnWidth(i, WIDTHS[i] * 256);
+                if (pos[i] >= 0) {
+                    sheet.setColumnWidth(pos[i], WIDTHS[i] * 256);
+                }
             }
             // Keep the header visible while scrolling a long archive.
             sheet.createFreezePane(0, 3);
@@ -86,62 +99,80 @@ public class AccountingExcelWriter {
 
     // ------------------------------------------------------------------ sections
 
-    private int writeTitle(Sheet sheet, Styles styles, String title, int rowIndex) {
+    /**
+     * Where each logical column of {@link #HEADERS} lands on the sheet, or -1 when it is left out.
+     * Without tax the tax and net columns go and the ones after them move up.
+     */
+    private static int[] columnPositions(boolean showTax) {
+        int[] pos = new int[HEADERS.length];
+        int next = 0;
+        for (int i = 0; i < pos.length; i++) {
+            boolean taxColumn = i == TAX_COLUMN || i == NET_COLUMN;
+            pos[i] = taxColumn && !showTax ? -1 : next++;
+        }
+        return pos;
+    }
+
+    private int writeTitle(Sheet sheet, Styles styles, String title, int rowIndex, int[] pos) {
         Row row = sheet.createRow(rowIndex);
         row.setHeightInPoints(28);
         var cell = row.createCell(0);
         cell.setCellValue(title);
         cell.setCellStyle(styles.title);
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, HEADERS.length - 1));
+        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, pos[pos.length - 1]));
         return rowIndex + 2;
     }
 
-    private int writeHeader(Sheet sheet, Styles styles, int rowIndex) {
+    private int writeHeader(Sheet sheet, Styles styles, int rowIndex, int[] pos) {
         Row row = sheet.createRow(rowIndex);
         row.setHeightInPoints(22);
         for (int i = 0; i < HEADERS.length; i++) {
-            var cell = row.createCell(i);
+            if (pos[i] < 0) {
+                continue;
+            }
+            var cell = row.createCell(pos[i]);
             cell.setCellValue(HEADERS[i]);
             cell.setCellStyle(styles.header);
         }
         return rowIndex + 1;
     }
 
-    private void writeOrder(Sheet sheet, Styles styles, CustomerOrder order, int rowIndex) {
+    private void writeOrder(Sheet sheet, Styles styles, CustomerOrder order, int rowIndex,
+                            int[] pos) {
         Row row = sheet.createRow(rowIndex);
         int col = 0;
 
-        text(row, col++, order.getOrderNumber(), styles.text);
-        text(row, col++, order.getPlacedAt().format(DATE_TIME), styles.text);
-        text(row, col++, order.getContactName(), styles.text);
-        text(row, col++, PhoneNormalizer.toLocalFormat(order.getContactPhone()), styles.text);
-        text(row, col++, order.getShipGovernorateName(), styles.text);
-        text(row, col++, order.getShipArea(), styles.text);
+        text(row, pos[col++], order.getOrderNumber(), styles.text);
+        text(row, pos[col++], order.getPlacedAt().format(DATE_TIME), styles.text);
+        text(row, pos[col++], order.getContactName(), styles.text);
+        text(row, pos[col++], PhoneNormalizer.toLocalFormat(order.getContactPhone()), styles.text);
+        text(row, pos[col++], order.getShipGovernorateName(), styles.text);
+        text(row, pos[col++], order.getShipArea(), styles.text);
 
-        number(row, col++, order.getItems().size(), styles.integer);
-        number(row, col++, order.totalQuantity(), styles.integer);
+        number(row, pos[col++], order.getItems().size(), styles.integer);
+        number(row, pos[col++], order.totalQuantity(), styles.integer);
 
-        money(row, col++, order.getSubtotalGross(), styles.money);
-        money(row, col++, order.getDiscountTotal(), styles.money);
-        money(row, col++, order.getShippingCost(), styles.money);
-        money(row, col++, order.getAssemblyTotal(), styles.money);
-        money(row, col++, order.getCodFee(), styles.money);
-        money(row, col++, order.getGrandTotal(), styles.moneyBold);
-        money(row, col++, order.getTaxTotal(), styles.money);
-        money(row, col++, order.getNetTotal(), styles.money);
+        money(row, pos[col++], order.getSubtotalGross(), styles.money);
+        money(row, pos[col++], order.getDiscountTotal(), styles.money);
+        money(row, pos[col++], order.getShippingCost(), styles.money);
+        money(row, pos[col++], order.getAssemblyTotal(), styles.money);
+        money(row, pos[col++], order.getCodFee(), styles.money);
+        money(row, pos[col++], order.getGrandTotal(), styles.moneyBold);
+        money(row, pos[col++], order.getTaxTotal(), styles.money);
+        money(row, pos[col++], order.getNetTotal(), styles.money);
 
-        text(row, col++, arabicPaymentMethod(order.getPaymentMethod().name()), styles.text);
-        text(row, col++, arabicPaymentStatus(order.getPaymentStatus().name()), styles.text);
-        text(row, col, arabicFulfillment(order.getFulfillmentStatus().name()), styles.text);
+        text(row, pos[col++], arabicPaymentMethod(order.getPaymentMethod().name()), styles.text);
+        text(row, pos[col++], arabicPaymentStatus(order.getPaymentStatus().name()), styles.text);
+        text(row, pos[col], arabicFulfillment(order.getFulfillmentStatus().name()), styles.text);
     }
 
     private void writeTotals(Sheet sheet, Styles styles, Totals totals,
-                             int orderCount, int rowIndex) {
+                             int orderCount, int rowIndex, int[] pos) {
         Row row = sheet.createRow(rowIndex);
         row.setHeightInPoints(22);
 
         var label = row.createCell(0);
-        label.setCellValue("الإجمالي (%d طلب)".formatted(orderCount));
+        label.setCellValue(String.format(java.util.Locale.ROOT, "الإجمالي (%d طلب)", orderCount));
         label.setCellStyle(styles.totalLabel);
         sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, 5));
 
@@ -149,31 +180,39 @@ public class AccountingExcelWriter {
             row.createCell(i).setCellStyle(styles.totalLabel);
         }
 
-        number(row, 6, totals.itemCount, styles.totalInteger);
-        number(row, 7, totals.quantity, styles.totalInteger);
-        money(row, 8, totals.subtotal, styles.totalMoney);
-        money(row, 9, totals.discount, styles.totalMoney);
-        money(row, 10, totals.shipping, styles.totalMoney);
-        money(row, 11, totals.assembly, styles.totalMoney);
-        money(row, 12, totals.codFee, styles.totalMoney);
-        money(row, 13, totals.grandTotal, styles.totalMoney);
-        money(row, 14, totals.tax, styles.totalMoney);
-        money(row, 15, totals.net, styles.totalMoney);
+        number(row, pos[6], totals.itemCount, styles.totalInteger);
+        number(row, pos[7], totals.quantity, styles.totalInteger);
+        money(row, pos[8], totals.subtotal, styles.totalMoney);
+        money(row, pos[9], totals.discount, styles.totalMoney);
+        money(row, pos[10], totals.shipping, styles.totalMoney);
+        money(row, pos[11], totals.assembly, styles.totalMoney);
+        money(row, pos[12], totals.codFee, styles.totalMoney);
+        money(row, pos[13], totals.grandTotal, styles.totalMoney);
+        money(row, pos[TAX_COLUMN], totals.tax, styles.totalMoney);
+        money(row, pos[NET_COLUMN], totals.net, styles.totalMoney);
 
         for (int i = 16; i < HEADERS.length; i++) {
-            row.createCell(i).setCellStyle(styles.totalLabel);
+            row.createCell(pos[i]).setCellStyle(styles.totalLabel);
         }
     }
 
     // ------------------------------------------------------------------ helpers
 
+    // A column of -1 is one left out of this sheet (see columnPositions): these write nothing.
+
     private void text(Row row, int col, String value, CellStyle style) {
+        if (col < 0) {
+            return;
+        }
         var cell = row.createCell(col);
         cell.setCellValue(value == null ? "" : value);
         cell.setCellStyle(style);
     }
 
     private void number(Row row, int col, int value, CellStyle style) {
+        if (col < 0) {
+            return;
+        }
         var cell = row.createCell(col);
         cell.setCellValue(value);
         cell.setCellStyle(style);
@@ -184,6 +223,9 @@ public class AccountingExcelWriter {
      * column; a string that looks like "2,400.00 ج.م" cannot be summed.
      */
     private void money(Row row, int col, BigDecimal value, CellStyle style) {
+        if (col < 0) {
+            return;
+        }
         var cell = row.createCell(col);
         cell.setCellValue(MoneyUtils.nullSafe(value).doubleValue());
         cell.setCellStyle(style);
