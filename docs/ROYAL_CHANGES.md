@@ -1,4 +1,4 @@
-# ROYAL — اللي اتغيّر عن VELORA (V11 → V17)
+# ROYAL — اللي اتغيّر عن VELORA (V11 → V17، + نطاق التصنيف V21)
 
 للمطوّر اللي هيبني الواجهة (Angular). ده **مش نسخة من العقد** — ده دليل "إيه اللي اتغيّر وإيه اللي يتوقعه".
 التفاصيل الكاملة لكل endpoint في [VELORA_API_Contract.md](VELORA_API_Contract.md).
@@ -69,6 +69,16 @@
 - `CartResponse.assemblyTotal`.
 - `ShippingQuoteResponse`: `assemblyTotal`, `shippingCapApplied`, `uncappedCost`, `breakdown[]`.
 
+### التصنيف (`scope`) — V21
+
+كل تصنيف دلوقتي ليه **نطاق**: `PRODUCT` (المتجر) أو `PORTFOLIO` (المعرض بس).
+
+- `CategoryAdminResponse.scope` (في `GET /admin/categories`، على **كل عقدة** في الشجرة): `"PRODUCT"` | `"PORTFOLIO"`. دايمًا موجود.
+- `POST` / `PUT /admin/categories` بيقبلوا `scope` **اختياري**: `"PRODUCT"` | `"PORTFOLIO"`.
+  - إنشاء من غير `scope` ⇒ `PRODUCT`، **أو نطاق الأب** لو بعت `parentId` (الفرعي مينفعش يبقى غير نطاق أبوه).
+  - **تعديل من غير `scope` ⇒ بلا تغيير** (انظر تحت).
+- الردود العامة (`/categories/tree`, `/categories/{slug}`, `CategoryTreeResponse`) **ما فيهاش `scope`** وما بترجعش غير `PRODUCT`.
+
 ---
 
 ## ٢. الـ endpoints الجديدة
@@ -77,7 +87,8 @@
 
 | المسار | الغرض |
 |---|---|
-| `GET /api/v1/portfolio?categoryId=&page=&size=` | المعرض المنشور، مرقّم (`PageResponse`، الافتراضي 12، الحد الأقصى 50). الترتيب ثابت: `displayOrder` ثم الأحدث. الـ `sort` بيتتجاهل |
+| `GET /api/v1/portfolio?categoryId=&page=&size=` | المعرض المنشور، مرقّم (`PageResponse`، الافتراضي 12، الحد الأقصى 50). الترتيب ثابت: `displayOrder` ثم الأحدث. الـ `sort` بيتتجاهل. **`categoryId` فلتر بيتنفّذ في السيرفر — استخدمه بدل ما تجيب كل الصفحات وتفلتر في الواجهة** (التفاصيل تحت) |
+| `GET /api/v1/portfolio/categories` | **تصنيفات المعرض** لفلتر الصفحة: `[{id, slug, name, imageUrl, displayOrder}]`. قايمة **مسطّحة** (مستوى واحد)، `PORTFOLIO` الفعّالة بس، بترتيب `displayOrder`. الـ `id` يتبعت كـ `categoryId` لـ`GET /portfolio`. تصنيفات المتجر **مش** بتظهر هنا |
 | `GET /api/v1/portfolio/{slug}` | عنصر واحد بكل صوره. **بالـ slug مش بالـ id** |
 | `POST /api/v1/custom-requests` | طلب تصنيع/مقاس مخصوص. بيرجّع `requestNumber` و`attachmentToken` (**مرة واحدة** — احفظه) |
 | `POST /api/v1/custom-requests/{id}/attachments` | رفع صورة (multipart، part اسمه `file`، header `X-Request-Token`) |
@@ -85,10 +96,49 @@
 body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `contactName`، `phone`، `governorateId` إجباريين؛ `productId` (إجباري لـ`SIZE_VARIANT`)، `widthCm/heightCm/depthCm` (واحد على الأقل لـ`SIZE_VARIANT`)، `quantity`, `notes`, `email`, `altPhone`, `area`, `streetAddress` اختيارية.
 الصور: JPEG/PNG/WebP/AVIF، حتى 5 ميجا، **5 صور كحد أقصى للطلب**، والطلب لازم يكون `NEW`. الـ token صالح 24 ساعة.
 
+#### المعرض بالظبط: الـ query params وشكل الردود
+
+**`GET /api/v1/portfolio` بيقبل الأربعة دول بس:**
+
+| الـ param | النوع | افتراضي | ملاحظات |
+|---|---|---|---|
+| `categoryId` | رقم (`Long`)، اختياري | — | **الفلترة بتتعمل في السيرفر. ما تجيبش كل الصفحات وتفلتر في الواجهة.** بيفلتر على **التصنيف نفسه بس، مش على أولاده** (تصنيفات المعرض مستوى واحد أصلًا). تصنيف مش موجود أو تصنيف متجر ⇒ `200` بصفحة فاضية، مش خطأ. عنصر **من غير تصنيف** مش بيظهر في أي فلتر، وبيظهر في القايمة من غير `categoryId` |
+| `page` | رقم | `0` | يبدأ من صفر |
+| `size` | رقم | `12` | **الحد الأقصى 50 — اللي أكبر منه بيتقصّ بصمت** (`size=100` بيرجع `"size": 50`) |
+| `sort` | — | — | **بيتتجاهل.** الترتيب ثابت: `displayOrder` ثم الأحدث |
+
+الرد (`PageResponse`)، الحقول الفاضية **بتتشال** (مش بترجع `null`):
+```json
+{
+  "content": [
+    {
+      "id": 1, "slug": "sheikh-zayed-villa-gate", "title": "بوابة حديد مشغول — فيلا الشيخ زايد",
+      "imageUrl": "http://localhost:8081/uploads/portfolio/2026/10/3a606ac55cd240db832bce97f61783f2.png",
+      "categorySlug": "doors", "categoryName": "أبواب", "completedAt": "2026-10-20"
+    }
+  ],
+  "page": 0, "size": 12, "totalElements": 1, "totalPages": 1, "first": true, "last": true, "empty": false
+}
+```
+حقول العنصر: `id`, `slug`, `title` (دايمًا)، و`imageUrl`, `imageAlt`, `categorySlug`, `categoryName`, `completedAt` (**بتغيب لو مفيش قيمة**). مفيش `categoryId` في العنصر — اربط العنصر بالتصنيف عن طريق `categorySlug`.
+
+**`GET /api/v1/portfolio/categories`** — قايمة مباشرة (**مصفوفة، مش `PageResponse`**)، كل عنصر بالحقول دي بالظبط:
+```json
+[
+  { "id": 31, "slug": "doors",  "name": "أبواب", "displayOrder": 0 },
+  { "id": 32, "slug": "stairs", "name": "سلالم", "imageUrl": "http://localhost:8081/uploads/categories/2026/10/a1b2c3.jpg", "displayOrder": 1 }
+]
+```
+- `id`, `slug`, `name`, `displayOrder` دايمًا. `imageUrl` **بيغيب** لو التصنيف مالوش صورة (زي "أبواب" فوق).
+- **`name` نص واحد بلغة الطلب، مش `nameAr`/`nameEn`.** اللغة من `Accept-Language`: `ar` (الافتراضي) بيرجع "أبواب"، و`en` بيرجع "Doors"، ولو التصنيف مالوش اسم إنجليزي بيرجع العربي. ابعت الـ header نفسه اللي بتبعته لباقي الـ endpoints العامة.
+- بتفلتر بيه: خد `id` وابعته `?categoryId=` لـ`GET /portfolio`.
+
+
 ### أدمن (`ROLE_ADMIN`، غير كده 403)
 
 | المسار | الغرض |
 |---|---|
+| `GET /admin/categories?scope=` | `scope` اختياري: `PRODUCT` أو `PORTFOLIO`. من غيره بيرجع **الاتنين** وكل عقدة فيها `scope`. أي قيمة تانية ⇒ `400 INVALID_PARAMETER`. فورم المنتج يطلب `?scope=PRODUCT`، فورم المعرض `?scope=PORTFOLIO`، وشاشة التصنيفات من غير فلتر |
 | `PATCH /admin/orders/{id}/schedule` | `{scheduledDeliveryAt, note?}` — تحديد/تغيير موعد التوصيل |
 | `GET /admin/shipping/governorates` | كل المحافظات، المقفولة كمان |
 | `PUT /admin/shipping/governorates/{id}/zone` | `{zoneId}` — فتح محافظة أو نقلها لمنطقة |
@@ -175,6 +225,20 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 ### ١٠) عناوين الـ IP ومعدّلات الحد
 وراء proxy (nginx/ngrok) الـ IP بقى بيتاخد من `X-Forwarded-For`، فكل زائر ليه حدّه (قبل كده الموقع كله كان بيتشارك حد واحد). ده بيأثر على login وOTP كمان.
 
+### ١١) التصنيفات بقى ليها نطاق: المعرض والمتجر منفصلين (V21)
+
+**ليه:** تصنيف زي "أبواب" اتعمل للمعرض كان بيظهر في منيو المتجر جنب غرفة النوم، والعميل يدوس ويلاقي صفحة فاضية.
+
+- **المتجر (`/categories/tree`, `/categories/{slug}`, الفلاتر):** `PRODUCT` بس. slug تصنيف معرض بيرجع **404** كأنه مجهول.
+- **التصنيف الفاضي من `PRODUCT` لسه بيظهر في المنيو — ده مقصود** (العميل عايز يشوف الهيكل كله قبل ما يتملي). **ما تفلترش بـ `productCount` في الواجهة**؛ اللي بيحدد الظهور هو `scope` و`active` بس.
+- **فورم المنتج:** اختيار التصنيف من `GET /admin/categories?scope=PRODUCT`. **فورم عنصر المعرض:** من `?scope=PORTFOLIO`. لو بعت تصنيف من النطاق التاني السيرفر يرفض بـ `CATEGORY_SCOPE_MISMATCH`. ده بيتطبّق في **الإنشاء والتعديل** للاتنين.
+- **عنصر معرض من غير تصنيف (`categoryId: null`) سليم** — بيظهر في `GET /portfolio` من غير فلتر وبيتفتح عادي. بس الفلتر بتصنيف مش بيرجّعه.
+- **⚠️ `PUT /admin/categories/{id}`: غياب `scope` = بلا تغيير.** ده **الحقل الوحيد** اللي مش استبدال كامل (باقي الحقول زي ما هي: `parentId` الغايب ينقل التصنيف للجذر، والترجمات الغايبة بتتحذف). السبب: لو الغياب كان معناه "رجّعه `PRODUCT`"، أي فورم قديم أو سكربت مش بيبعت الحقل كان هيحوّل تصنيف معرض لتصنيف متجر بصمت، فيظهر في المنيو ومحدش يلاحظ. دلوقتي اللي ينسى الحقل مش بيغيّر حاجة. **ما تفترضش إن `scope` زي باقي الحقول.** لتغيير النطاق ابعت القيمة الجديدة صراحةً.
+- **الفرعي بياخد نطاق أبوه:** في فورم "تصنيف فرعي" اعرض النطاق مقفول (قيمة الأب) أو ما تعرضوش؛ ابعت `parentId` وسيب `scope`. السيرفر يرفض نطاق مختلف بـ `CATEGORY_SCOPE_MISMATCH`. والقاعدة محمية في الداتابيز نفسها.
+- **تغيير نطاق تصنيف:** مرفوض ما دام فيه أولاد أو منتجات أو عناصر معرض (المؤرشفة بتتحسب) — `CATEGORY_SCOPE_IN_USE`. عطّل حقل النطاق في التعديل للتصنيف المستخدم، وقولهم ينقلوا اللي فيه الأول.
+- **الـ slug `categories` محجوز لعناصر المعرض** (`SLUG_RESERVED`)، لأنه مسار قايمة التصنيفات (`/portfolio/categories`) وأي عنصر بالاسم ده عمره ما يتفتح. لو الـ slug اتولّد من العنوان وطلع `categories` السيرفر بيحوله لـ `categories-2` لوحده.
+- **الـ slug بين النطاقين فريد:** "أبواب" في المعرض و"أبواب" في المتجر التاني بيطلع `-2`. تجميلي ونادر ومقصود.
+
 ---
 
 ## ٤. أكواد الأخطاء الجديدة
@@ -192,6 +256,9 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 | `PORTFOLIO_ITEM_NOT_FOUND` | 404 | slug/id مش موجود، أو مسودة، أو مؤرشف (العام مش بيفرّق) | صفحة 404 |
 | `PORTFOLIO_ITEM_ARCHIVED` | 409 | نشر أو تعديل صور عنصر مؤرشف | اعرض زرار "استرجاع" |
 | `SLUG_ALREADY_EXISTS` | 409 | slug صريح مستخدم (منتج، وبقى للمعرض كمان) | "الـ slug مستخدم" |
+| `CATEGORY_SCOPE_MISMATCH` | 400 | التصنيف في النطاق الغلط: منتج في تصنيف `PORTFOLIO`، أو عنصر معرض في تصنيف `PRODUCT`، أو تصنيف فرعي نطاقه مختلف عن أبوه (إنشاء **وتعديل**) | "التصنيف ده مش مناسب هنا، اختار من القايمة". معناه غالبًا إن الفورم بيعرض تصنيفات من غير `?scope=` الصح — صلّح القايمة، ما تكتفيش بالرسالة |
+| `CATEGORY_SCOPE_IN_USE` | 409 | تغيير `scope` لتصنيف فيه أولاد أو منتجات أو عناصر معرض (المؤرشفة بتتحسب) | "مينفعش تغيّر نوع تصنيف فيه محتوى، انقل اللي فيه الأول". والأحسن تعطّل حقل النطاق قبل ما يوصل للخطأ |
+| `SLUG_RESERVED` | 400 | slug عنصر معرض = `categories` (مسار ثابت تحت `/portfolio`)، في الإنشاء أو التعديل | اعرض `detail` من السيرفر (فيه السبب) جنب حقل الـ slug: "الاسم ده محجوز للنظام، اختار slug تاني" |
 | `RATE_LIMITED` | 429 | تجاوز حد المعدل (قسم ٥) | "حاول بعد شوية" |
 
 أكواد موجودة ومهمة في الحالات الجديدة: `VALIDATION_FAILED` (400) لأي مدخل غلط (ملف مش صورة، ملف فاضي أو أكبر من 5 ميجا، تاريخ مرفوض، `REJECTED` بدون ملاحظة)، `INVALID_STATUS_TRANSITION` (409)، `INVALID_PHONE_FORMAT` (400)، `FILE_REQUIRED` (400)، `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND` (404).
