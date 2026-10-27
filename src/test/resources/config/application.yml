@@ -1,0 +1,12 @@
+# Settings the tests must share with src/main/resources/application.yml.
+#
+# src/test/resources/application.yml (git-ignored, holds the royal_test login) REPLACES the main
+# application.yml on the test classpath, so anything it does not repeat silently differs from
+# production. This file sits in classpath:/config/, which Spring Boot reads IN ADDITION, and it is
+# tracked, so a fresh checkout gets it. Keep here only what must match production.
+#
+# Responses leave out null fields. Without this a test asserting "the field is absent" was reading a
+# response that returned it as null, and could not fail (NullStrippingParityIntegrationTest).
+spring:
+  jackson:
+    default-property-inclusion: non_null
