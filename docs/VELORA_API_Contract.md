@@ -749,7 +749,16 @@ Base path: `/api/v1/admin/products`, `/api/v1/admin/variants`, `/api/v1/admin/ca
 
 ---
 
-#### `PATCH /api/v1/admin/products/{id}/unpublish`
+#### `POST /api/v1/admin/products/bulk-status`
+**Summary:** Publish or unpublish many products at once (the product list's checkboxes and "Publish all drafts"). Body `{"action": "PUBLISH" | "UNPUBLISH", "ids": [..]}`, at most 500 ids. `PUBLISH` takes DRAFT products live, `UNPUBLISH` returns ACTIVE ones to draft. Each product is its own transaction, so one that cannot go live does not hold back the rest. Archived products are never touched.
+
+**Success response `200`:** `ProductBulkStatusResponse` — `action`, `requested` (distinct ids), `succeeded` (ids that changed) and `skipped` (`[{id, name, reason}]`). `reason`: `NOT_DRAFT` · `NOT_ACTIVE` · `PRODUCT_NOT_FOUND` · `PRODUCT_HAS_NO_VARIANTS` · `PRODUCT_MISSING_ARABIC_NAME`.
+
+**Error responses:** `400 VALIDATION_FAILED` (no ids, more than 500, or no action).
+
+---
+
+### `PATCH /api/v1/admin/products/{id}/unpublish`
 **Summary:** Move a product back to `DRAFT`.
 
 **Success response `200`:** `ProductAdminResponse`, `status: "DRAFT"`.
@@ -2903,6 +2912,73 @@ Reconciles cash-on-delivery cash the courier is holding against what actually ge
 **Success response `200`:** the remittance with `status: "CANCELLED"`. The note becomes `<reason>` if the remittance had no note yet, or `<original note> | CANCELLED: <reason>` if one already existed.
 
 **Error responses:** `404 RESOURCE_NOT_FOUND`, `400 INVALID_PARAMETER` (`reason` omitted from the query string entirely — it is a mandatory `@RequestParam` with no default, so Spring rejects the request before the controller runs), `400 VALIDATION_FAILED` (`reason` sent but blank, e.g. `?reason=`), `409 INVALID_STATUS_TRANSITION` (already cancelled).
+
+---
+
+## Product Bulk Import
+Base path: `/api/v1/admin/product-imports` (ROLE_ADMIN)
+
+Bulk product upload from Excel, in two steps so nothing reaches the catalogue unreviewed: **upload** parses and validates the sheet and stores the result as a *preview*; **commit** writes every product in one transaction, and is allowed only when no row has an error. The template **is the furniture workbook** (`docs/01  Bar Stools.xlsx`): the main sheet «كرسي البار» (44 columns, A–AR) and the «SEO» sheet (25 columns, A–Y), joined by SKU. The upload accepts **only** a file whose two sheets carry exactly those header rows, cell for cell and in the same order (extra sheets such as `Eng` or `Dropdawon` are ignored). Anything else fails with `400 IMPORT_TEMPLATE_MISMATCH` and a message naming the sheet and each differing column.
+
+**Where each value comes from.** `sku` = main A. Category, slug and meta title/description = SEO sheet (B «القسم», T, P–S; «كراسي بار» finds the shop category «كراسي البار»). Name = main AO/AP (SEO!E/F if empty); short description = main AJ; descriptions = main AQ/AR (SEO!N/O if empty). Price = main AN, else SEO!M, else main AG; price before discount = main AF; opening stock = main AH. Main D–AE and AI become specification attributes. Ignored: product name column B, image code C, seller notes AL, and SEO keywords/sizes. A SKU with no SEO row is an error (`SEO_ROW_MISSING`).
+
+**Row semantics.** One row = one product with one variant (`sku` = the variant SKU). The sheet has no fulfilment/size/assembly columns, so new products are `MADE_TO_ORDER`. Every row creates a `DRAFT` product with its inventory row; publishing is done afterwards from the product list (`POST /admin/products/bulk-status`). **A SKU is unique across the whole shop** (archived products included, a SKU is never reused): a row whose SKU already belongs to a product is an error (`SKU_EXISTS`, naming that product), exactly like a SKU repeated in the sheet. So re-uploading an already imported sheet is refused row by row until the SKUs are changed.
+
+**Review screen.** `GET /{id}` for the totals (`canSubmit`), `GET /{id}/rows` for the rows, **invalid rows first** then sheet order (`status=ERROR` or `VALID` narrows). `validRows + errorRows = totalRows` always; Each row carries `data` (the parsed values), `values` (the same values as flat text by field key, for the editor), `specifications` (every specification the sheet can carry, filled or not: `code`, `key`, `label`, `kind` TEXT/NUMBER/BOOLEAN, `value`) and `messages[]`. A message says where it is: `column` (header text), `field` (the editor key, e.g. `price`, `spec_width_cm`), `cell` (the cell of the uploaded file, e.g. `AN5` or `SEO!T7`), plus `severity` ERROR/WARNING, `code` and `message`. The client branches on `code`.
+
+### `GET /api/v1/admin/product-imports/template`
+**Summary:** The template `.xlsx`: the furniture workbook with its two data sheets as **headers only (no data rows)** and the `Dropdawon` list sheet its dropdowns use. Header styling, right-to-left layout and data validation are the original ones. Uploaded as downloaded it is refused with `400 IMPORT_EMPTY`.
+
+**Success response `200`:** binary `.xlsx`, `Content-Disposition: attachment; filename="product-import-template.xlsx"`.
+
+---
+
+### `POST /api/v1/admin/product-imports`
+**Summary:** Step 1. Multipart field `file` (`.xlsx`, up to the multipart limit, at most 2,000 product rows). Saves nothing to the catalogue.
+
+**Success response `201`:** `ImportBatchResponse` — `id`, `fileName`, `status` (`PREVIEW`), `totalRows`, `validRows`, `errorRows`, `warningRows`, `canSubmit`, `createdAt`, `committedAt`.
+
+**Error responses:** `400 FILE_REQUIRED` · `400 UNSUPPORTED_FILE_TYPE` (not an `.xlsx`) · `400 IMPORT_TEMPLATE_MISMATCH` · `400 IMPORT_EMPTY` · `400 IMPORT_TOO_MANY_ROWS` · `413 FILE_TOO_LARGE`.
+
+---
+
+### `GET /api/v1/admin/product-imports` · `GET /api/v1/admin/product-imports/{id}`
+**Summary:** Recent imports (paginated, newest first) · one import's totals. `404 IMPORT_BATCH_NOT_FOUND`.
+
+---
+
+### `GET /api/v1/admin/product-imports/{id}/rows?status=&page=&size=`
+**Summary:** The rows for review, paginated (`PageResponse<ImportRowResponse>`, default size 50). `status` = `VALID` or `ERROR`, omitted for all.
+
+**Row codes:** `REQUIRED` · `INVALID_CELL` · `INVALID_NUMBER` · `NEGATIVE` · `TOO_LONG` · `TOO_MANY_DECIMALS` · `NOT_WHOLE` · `TOO_LARGE` · `INVALID_VALUE` · `OUT_OF_RANGE` · `INVALID_SKU` · `INVALID_SLUG` · `ENGLISH_NAME_REQUIRED` · `PRICE_ZERO` · `COMPARE_AT_BELOW_PRICE` · `UNKNOWN_CATEGORY` · `AMBIGUOUS_CATEGORY` · `SIZE_REQUIRED` · `SLUG_TAKEN` · `DUPLICATE_SKU` · `DUPLICATE_SLUG` · `ATTRIBUTE_SETUP` · `SEO_ROW_MISSING` · `SKU_EXISTS` (errors); a problem in a **specification** cell (`INVALID_NUMBER`, `INVALID_VALUE`, `OUT_OF_RANGE`, `TOO_LONG`, `INVALID_CELL`) is only a warning and the cell is skipped. `NO_DESCRIPTION` (warnings, never block).
+
+---
+
+### `PUT /api/v1/admin/product-imports/{id}/rows/{rowNo}`
+**Summary:** Fixes one row of a preview without uploading again. Body `{"values": {"price": "2650", "category": "كراسي البار"}}`: keys are the row's `values` keys (core: `sku, category, name_ar, name_en, short_ar, desc_ar, desc_en, meta_title_ar, meta_title_en, meta_desc_ar, meta_desc_en, slug, price, compare_at, stock`; specifications: `spec_<attribute code lowercase>`). Only the keys sent change; an empty text clears. All values are text, so a mistyped number comes back as a finding, not as a rejected request. The row is checked exactly like an uploaded one, then the **whole batch is recounted**, because a duplicate SKU/slug involves other rows. The uploaded file is never changed; commit writes the edited values.
+
+**Success response `200`:** `ImportRowUpdateResponse` — `batch` (new counts and `canSubmit`), `row`, and `affected`: the OTHER rows whose result changed because of this edit (a duplicate SKU or slug cleared or appeared), so the screen can update them in place.
+
+**Error responses:** `400 VALIDATION_FAILED` (a key that is not editable) · `404 IMPORT_ROW_NOT_FOUND` · `404 IMPORT_BATCH_NOT_FOUND` · `409 IMPORT_BATCH_NOT_PENDING`.
+
+---
+
+### `GET /api/v1/admin/product-imports/{id}/sku-check?sku=&rowNo=`
+**Summary:** Is this SKU unique? For the row editor, before the row is saved. `rowNo` is the row being edited, so it does not clash with itself. `status`: `AVAILABLE` (unique) · `DUPLICATE_IN_FILE` (another row of this sheet has it, `rowNos` says which: an error) · `IN_CATALOG` (a product already uses it, so it is an error: a SKU is never reused; `productId`, `productName`) · `EMPTY`.
+
+---
+
+### `POST /api/v1/admin/product-imports/{id}/commit`
+**Summary:** Step 2. Re-checks every row against the catalogue as it is now, then writes all products in one transaction: all or none. New products are `DRAFT`.
+
+**Success response `200`:** `ImportCommitResponse` — `batchId`, `created`, `note`.
+
+**Error responses:** `409 IMPORT_HAS_ERRORS` (a row has an error, or the catalogue changed since the preview; nothing saved) · `409 IMPORT_BATCH_NOT_PENDING` (already submitted or discarded) · `409 IMPORT_BATCH_EXPIRED` (preview older than 24 hours) · `404 IMPORT_BATCH_NOT_FOUND`.
+
+---
+
+### `DELETE /api/v1/admin/product-imports/{id}`
+**Summary:** Discard a preview (the rows are kept for the record). `204`. `409 IMPORT_BATCH_NOT_PENDING` if it was already submitted or discarded.
 
 ---
 

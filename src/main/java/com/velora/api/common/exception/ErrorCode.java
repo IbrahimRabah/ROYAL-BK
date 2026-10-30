@@ -37,6 +37,18 @@ public enum ErrorCode {
     UNSUPPORTED_FILE_TYPE("This file type is not accepted", HttpStatus.BAD_REQUEST),
     FILE_REQUIRED("A file is required", HttpStatus.BAD_REQUEST),
 
+    // ---- catalog: bulk import ----
+    IMPORT_TEMPLATE_MISMATCH("This file is not the product import template. Download the template "
+            + "again and fill that file in", HttpStatus.BAD_REQUEST),
+    IMPORT_EMPTY("The file has no product rows", HttpStatus.BAD_REQUEST),
+    IMPORT_TOO_MANY_ROWS("The file has more rows than one import accepts", HttpStatus.BAD_REQUEST),
+    IMPORT_BATCH_NOT_FOUND("Import not found", HttpStatus.NOT_FOUND),
+    IMPORT_ROW_NOT_FOUND("This import has no such row", HttpStatus.NOT_FOUND),
+    IMPORT_BATCH_NOT_PENDING("This import was already submitted or discarded", HttpStatus.CONFLICT),
+    IMPORT_BATCH_EXPIRED("This import preview is too old. Upload the file again", HttpStatus.CONFLICT),
+    IMPORT_HAS_ERRORS("The import has rows with errors. Fix them in the preview, or fix the "
+            + "sheet and upload it again; nothing was saved", HttpStatus.CONFLICT),
+
     // ---- identity ----
     INVALID_CREDENTIALS("Invalid phone/email or password", HttpStatus.UNAUTHORIZED),
     ACCOUNT_SUSPENDED("This account has been suspended", HttpStatus.FORBIDDEN),

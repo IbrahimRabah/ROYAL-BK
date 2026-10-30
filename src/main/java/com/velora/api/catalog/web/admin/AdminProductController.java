@@ -3,9 +3,12 @@ package com.velora.api.catalog.web.admin;
 import com.velora.api.catalog.dto.admin.ImageResponse;
 import com.velora.api.catalog.dto.admin.ImageUpdateRequest;
 import com.velora.api.catalog.dto.admin.ProductAdminResponse;
+import com.velora.api.catalog.dto.admin.ProductBulkStatusRequest;
+import com.velora.api.catalog.dto.admin.ProductBulkStatusResponse;
 import com.velora.api.catalog.dto.admin.ProductCreateRequest;
 import com.velora.api.catalog.dto.admin.ProductUpdateRequest;
 import com.velora.api.catalog.service.admin.ProductAdminService;
+import com.velora.api.catalog.service.admin.ProductBulkStatusService;
 import com.velora.api.catalog.service.admin.ProductImageService;
 import com.velora.api.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,11 +44,14 @@ public class AdminProductController {
 
     private final ProductAdminService productService;
     private final ProductImageService imageService;
+    private final ProductBulkStatusService bulkStatusService;
 
     public AdminProductController(ProductAdminService productService,
-                                  ProductImageService imageService) {
+                                  ProductImageService imageService,
+                                  ProductBulkStatusService bulkStatusService) {
         this.productService = productService;
         this.imageService = imageService;
+        this.bulkStatusService = bulkStatusService;
     }
 
     @Operation(summary = "List all products including drafts and archived")
@@ -75,6 +81,18 @@ public class AdminProductController {
     public ProductAdminResponse update(@PathVariable Long id,
                                        @Valid @RequestBody ProductUpdateRequest request) {
         return productService.update(id, request);
+    }
+
+    @Operation(summary = "Publish or unpublish many products",
+            description = """
+                    For the product list: `PUBLISH` takes the given DRAFT products live, `UNPUBLISH` returns the given
+                    ACTIVE ones to draft. Each product is its own transaction, so one that cannot go live (no variant,
+                    no Arabic name) is reported in `skipped` with the reason while the others still change. Archived
+                    products are never touched. At most 500 ids.
+                    """)
+    @PostMapping("/bulk-status")
+    public ProductBulkStatusResponse bulkStatus(@Valid @RequestBody ProductBulkStatusRequest request) {
+        return bulkStatusService.apply(request);
     }
 
     @Operation(summary = "Publish",

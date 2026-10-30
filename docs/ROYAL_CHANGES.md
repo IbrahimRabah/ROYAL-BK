@@ -275,6 +275,16 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 | `PATCH /admin/portfolio/{id}/restore` | رجوع من الأرشيف **كمسودة** |
 | `GET/POST /admin/portfolio/{id}/images` | قائمة/رفع (multipart، `file`، 20 صورة كحد أقصى، أول صورة رئيسية) |
 | `PATCH` / `DELETE /admin/portfolio/{id}/images/{imageId}` | تعديل alt/ترتيب/رئيسية، حذف صورة |
+| `GET /admin/product-imports/template` | تحميل ملف Excel الفاضي (الملف الوحيد المقبول في الرفع) |
+| `POST /admin/product-imports` | رفع الملف المعبّي (multipart، `file`) ⇒ **معاينة** بس، مفيش حاجة بتتحفظ في الكتالوج |
+| `GET /admin/product-imports/{id}` · `.../{id}/rows?status=ERROR` | إجماليات الدفعة (`canSubmit`) وصفوفها لشاشة المراجعة |
+| `PUT /admin/product-imports/{id}/rows/{rowNo}` | تصحيح صف في المعاينة `{values:{price:"2650",…}}` (المفاتيح هي `values` الصف و`field` الرسائل). الصف بيتفحص زي المرفوع، وبيرجع `{batch,row}` بالعدّادات الجديدة، والـcommit بيحفظ القيم المعدّلة |
+| `GET /admin/product-imports/{id}/sku-check?sku=&rowNo=` | هل الـSKU فريد؟ `AVAILABLE` / `DUPLICATE_IN_FILE` (خطأ) / `IN_CATALOG` (خطأ كمان: الـSKU مستخدم في منتج ومش بيتعاد استخدامه) / `EMPTY` |
+| `POST /admin/products/bulk-status` | نشر/إلغاء نشر منتجات كتير `{action:"PUBLISH"\|"UNPUBLISH", ids:[..]}` (أقصى 500). كل منتج في transaction لوحده والمتعذّر بيرجع في `skipped` بسببه. شاشة المنتجات بتستخدمه (تحديد + "نشر المحدد" + "نشر كل المسودات") |
+| `POST /admin/product-imports/{id}/commit` | اعتماد الشيت كله: كله أو ولا حاجة. مرفوض `409 IMPORT_HAS_ERRORS` لو فيه صف فيه خطأ |
+| `DELETE /admin/product-imports/{id}` | إلغاء المعاينة |
+
+**رفع المنتجات من Excel (V23):** الشاشة على خطوتين. ١) حمّل القالب وارفعه ⇒ بترجع `ImportBatchResponse`، وأي اختلاف في عناوين الأعمدة (اسم/ترتيب/ناقص/زيادة) بيرجع `400 IMPORT_TEMPLATE_MISMATCH` والرسالة بتسمّي كل عمود مختلف. ٢) اعرض الصفوف من `/rows` (كل صف: `data` المقروءة + `specifications` + `messages[]` بـ`code` و`severity`) وزرار "اعتماد" يتفعّل بـ`canSubmit` بس. القالب هو شيت الأثاث نفسه (شيت «كرسي البار» + شيت «SEO» **عناوين بس من غير بيانات**). كل رسالة بقت بتحدد `column` و`field` و`cell` (زي `AN5` أو `SEO!T7`) عشان الشاشة تقول المشكلة فين وتفتح تعديل الصف على نفس الحقل، والمقبول في الرفع هو الملف اللي عناوين الشيتين فيه مطابقة تمامًا. الفئة والـslug وبيانات الميتا من شيت SEO. أي قيمة غلط في خلية من خلايا المواصفات (زي "Number") بتطلع **تنبيه** والخلية بتتجاهل، مش خطأ بيوقف الرفع. الصف = منتج واحد بـ variant واحد (`sku`). كل صف بينشئ منتج `DRAFT`. نوع التنفيذ الفاضي = `MADE_TO_ORDER`. الصفوف الغير سليمة بتيجي الأول، و`validRows + errorRows = totalRows` دايمًا. الـ`PUT .../rows/{rowNo}` بيرجع كمان `affected` (صفوف تانية اتغيّرت بسبب التعديل زي تكرار SKU اتحل) تتحدّث مكانها من غير ما القايمة تتنقل. الاعتماد مش متاح غير لما كل الصفوف سليمة، والمنتجات بتتحفظ مسودات؛ النشر من قايمة المنتجات. الـSKU فريد على مستوى المتجر كله: صف SKU بتاعه موجود في منتج بيطلع خطأ `SKU_EXISTS` بيذكر المنتج، فرفع شيت اتعمله استيراد قبل كده بيتقفل لحد ما الـSKU يتغيّر. القائمة الكاملة بالأكواد في `VELORA_API_Contract.md` تحت "Product Bulk Import".
 
 حالات المعرض: **مسودة** (`published=false`) ← **منشور** ← **مؤرشف** (`archivedAt` مضبوط، و`published` بيتحط `false` غصب). المسودة والمؤرشف مش بيظهروا في العام.
 
