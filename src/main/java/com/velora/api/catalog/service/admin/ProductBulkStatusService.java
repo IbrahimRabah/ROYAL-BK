@@ -4,6 +4,7 @@ import com.velora.api.catalog.dto.admin.ProductAdminResponse;
 import com.velora.api.catalog.dto.admin.ProductBulkStatusRequest;
 import com.velora.api.catalog.dto.admin.ProductBulkStatusResponse;
 import com.velora.api.catalog.dto.admin.ProductBulkStatusResponse.Skipped;
+import com.velora.api.catalog.dto.admin.ProductBulkStatusResponse.Warned;
 import com.velora.api.common.exception.BusinessException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -41,6 +42,7 @@ public class ProductBulkStatusService {
         List<Long> ids = new ArrayList<>(new LinkedHashSet<>(request.ids()));
         List<Long> succeeded = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
+        List<Warned> warnings = new ArrayList<>();
         boolean publish = request.action() == ProductBulkStatusRequest.Action.PUBLISH;
 
         for (Long id : ids) {
@@ -65,6 +67,10 @@ public class ProductBulkStatusService {
                     productService.unpublish(id);
                 }
                 succeeded.add(id);
+                // Warn, never block: a made-to-order product may legitimately have no photo yet.
+                if (publish && product.imageCount() == 0) {
+                    warnings.add(new Warned(id, name, "NO_IMAGE"));
+                }
             } catch (BusinessException e) {
                 skipped.add(new Skipped(id, name, e.getErrorCode().name()));
             }
@@ -72,6 +78,6 @@ public class ProductBulkStatusService {
 
         log.info("Bulk {} of {} products: {} done, {} skipped", request.action(), ids.size(),
                 succeeded.size(), skipped.size());
-        return new ProductBulkStatusResponse(request.action().name(), ids.size(), succeeded, skipped);
+        return new ProductBulkStatusResponse(request.action().name(), ids.size(), succeeded, skipped, warnings);
     }
 }

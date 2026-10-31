@@ -1,9 +1,11 @@
 package com.velora.api.catalog.repository;
 
 import com.velora.api.catalog.domain.Product;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,6 +24,33 @@ public interface ProductRepository
 
     @EntityGraph(attributePaths = {"translations", "brand", "category", "images"})
     Optional<Product> findByIdAndArchivedAtIsNull(Long id);
+
+    /**
+     * The product row, locked until the transaction ends. Image uploads for one product are serialised
+     * through this, so «at most 20 images» and «the first image is the main one» are checked against what
+     * is really there, not against what another request is about to commit.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findByIdForUpdate(@Param("id") Long id);
+
+    /** Products that have no image at all (archived ones excluded), for the image import report. */
+    @Query("""
+            select p from Product p
+            where p.archivedAt is null and not exists (select 1 from ProductImage i where i.product = p)
+            order by p.id desc
+            """)
+    java.util.List<Product> findWithoutImages(org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
+            select count(p) from Product p
+            where p.archivedAt is null and not exists (select 1 from ProductImage i where i.product = p)
+            """)
+    long countWithoutImages();
+
+    /** [productId, imageCount] for the given products, in one query (products with none are absent). */
+    @Query("select i.product.id, count(i) from ProductImage i where i.product.id in :ids group by i.product.id")
+    java.util.List<Object[]> countImagesByProduct(@Param("ids") java.util.Collection<Long> ids);
 
     boolean existsBySlug(String slug);
 

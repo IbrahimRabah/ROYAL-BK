@@ -2982,6 +2982,73 @@ Bulk product upload from Excel, in two steps so nothing reaches the catalogue un
 
 ---
 
+
+## Product Image Import
+
+Pictures for products, matched by **file name = SKU**. Admin only (`/api/v1/admin/**`). Two steps: `match` (names only, nothing written), then `bulk` (a few files at a time). Run it after the products exist (they are created by the Excel import or by hand); it does not touch the Excel template.
+
+**Naming rule.** `SKU.ext` is the product's main image; `SKU_2.ext`, `SKU_3.ext` … are extra images in that order (positions 1–20). The SKU is compared case-insensitively after Unicode NFKC, with zero-width characters removed and Arabic-Indic digits read as digits. Only the last extension is dropped and its value is irrelevant; the file's bytes decide what it is (`ImageSniffer`: JPEG, PNG, WebP, AVIF). A name that fits two SKUs (`X_2` when both `X` and `X_2` exist) is `AMBIGUOUS_NAME`, never guessed. A near miss (`CH101 (1).jpg`, `CH101 - Copy.jpg`, `CH101.jpg.jpg`, `CH 101.jpg`) is suggested, never attached.
+
+### `POST /api/v1/admin/product-images/match`
+**Request** `ImageMatchRequest`: `mode` (`SKIP`|`ADD`|`REPLACE`), `files` (1–5000 × `{ name, sizeBytes, folder? }`).
+**Response `200`** `ImageMatchResponse`:
+```json
+{
+  "mode": "SKIP",
+  "summary": { "files": 8, "toUpload": 3, "productsSkipped": 0, "products": 2, "conflicts": 1, "unmatched": 3, "productsWithoutImage": 57 },
+  "products": [
+    {
+      "sku": "CH101", "productId": 9, "nameAr": "كرسي بار حديد…", "nameEn": "Iron Bar Stool…",
+      "categoryName": "كراسي بار", "status": "DRAFT", "existingImageCount": 0,
+      "action": "ATTACH",
+      "files": [
+        { "name": "CH101.jpg",   "folder": "كراسي بار", "position": 1, "sizeBytes": 2410000, "upload": true },
+        { "name": "CH101_2.png", "folder": "كراسي بار", "position": 2, "sizeBytes": 1820000, "upload": true }
+      ]
+    }
+  ],
+  "conflicts": [
+    { "sku": "CH109", "reason": "DUPLICATE_POSITION",
+      "files": [ { "name": "CH109.jpg", "folder": "كراسي بار", "position": 1, "sizeBytes": 1 },
+                 { "name": "CH109.png", "folder": "كراسي", "position": 1, "sizeBytes": 1 } ] }
+  ],
+  "unmatched": [
+    { "name": "CH101 (1).jpg", "sizeBytes": 1000, "reason": "NO_PRODUCT", "suggestionSku": "CH101", "suggestionPosition": 1 },
+    { "name": "CH110.heic",    "sizeBytes": 1000, "reason": "UNSUPPORTED_FORMAT", "sku": "CH110" },
+    { "name": "Thumbs.db",     "sizeBytes": 1000, "reason": "NOT_AN_IMAGE" }
+  ],
+  "productsWithoutImage": { "total": 57, "items": [ { "productId": 12, "sku": "CH111", "nameAr": "…", "nameEn": "…" } ] }
+}
+```
+`400 VALIDATION_FAILED` for an empty list or a missing mode.
+
+### `POST /api/v1/admin/product-images/bulk`
+**Request** `multipart/form-data`: `runId` (UUID, the same for every request of one run), `mode` (default `SKIP`), `files` (1–12; each ≤ 5 MB, request ≤ 10 MB). The file's own name is the SKU rule; resized bytes are fine.
+**Response `200`** `ImageBulkResponse` (one result per file, in order; a rejected file does not fail the request):
+```json
+{
+  "runId": "5f0c2a4e-1b7d-4d0e-9c53-2f7c1a9b6e11",
+  "mode": "SKIP",
+  "counts": { "attached": 1, "skipped": 1, "rejected": 1, "failed": 0 },
+  "results": [
+    { "name": "CH101.jpg",   "status": "ATTACHED", "sku": "CH101", "productId": 9, "imageId": 311,
+      "url": "http://localhost:8081/uploads/products/2026/10/3a….webp" },
+    { "name": "CH102.jpg",   "status": "SKIPPED",  "code": "HAS_IMAGES", "sku": "CH102", "productId": 10 },
+    { "name": "CH103.jpg",   "status": "REJECTED", "code": "NOT_AN_IMAGE", "sku": "CH103", "productId": 11 }
+  ]
+}
+```
+Result codes: SKIPPED `HAS_IMAGES` · `DUPLICATE_IMAGE`; REJECTED `NO_MATCH` · `AMBIGUOUS_NAME` · `UNSUPPORTED_FORMAT` (HEIC and similar) · `NOT_AN_IMAGE` · `TOO_LARGE` · `EMPTY_FILE` · `PRODUCT_ARCHIVED` · `LIMIT_REACHED` · `DUPLICATE_POSITION`; FAILED `SERVER_ERROR` (retry).
+**Errors:** `400 VALIDATION_FAILED` (runId is not a UUID) · `400 FILE_REQUIRED` · `400 IMAGE_IMPORT_TOO_MANY_FILES` (more than 12) · `413` above the request limit.
+
+**Behaviour.** Each file is its own transaction: the product row is locked (`PESSIMISTIC_WRITE`), then "has images before this run", duplicate hash, duplicate place, the 20-image limit and the main image are decided on what is stored. A file is written to disk before its row, and deleted again if the transaction does not commit (`StorageTransactionSupport`); replaced files are deleted only after commit. `SKIP` leaves a product that had images before the run; images added by the same `runId` do not count, so a product's files may arrive in separate requests. `REPLACE` removes only images from before the run. The main image is the lowest position of the run unless the product already had a main image (`ADD`). Alt text comes from the product's Arabic and English names. A single-variant product shares its images; with several active variants the image goes on the variant whose SKU the name carried.
+
+**Publishing without an image** is allowed and warned: `POST /admin/products/bulk-status` returns `warnings: [{ id, name, code: "NO_IMAGE" }]` for products that went live with no image.
+
+**Known gaps.** No sweep of orphan files after a process crash between the disk write and the commit. No server-side resizing or thumbnails (`thumb_url` stays empty); the screen resizes in the browser. The Excel template's column C («كود الصور») is ignored and holds the category label in the real sheet.
+
+---
+
 ## Health Check
 Base path: `/api/v1`
 

@@ -20,6 +20,7 @@
 | `V21__category_scope.sql` | `category.scope` (`PRODUCT` / `PORTFOLIO`, NOT NULL, `DEFAULT 'PRODUCT'`, existing rows become PRODUCT) so portfolio categories stay out of the shop navigation. Plus `UNIQUE (id, scope)` and `FOREIGN KEY (parent_id, scope)`: a child has its parent's scope, enforced by the database. `uq_cat_slug` is deliberately unchanged (slugs stay unique across scopes). Pre-flight check, one transaction, re-runnable. `create-test-db.ps1` applies it after V20. **Not yet applied to `royal`.** |
 | `V22__custom_request_quoted_at.sql` | `custom_order_request.quoted_at` (when the current quote amount was set; backfilled from the latest `CUSTOM_REQUEST_QUOTED` audit entry, else `updated_at`) and `ix_custom_req_customer (customer_id, created_at DESC)` for the customer's own list and the "waiting for your answer" counter. Writes nothing else. One transaction, re-runnable. `create-test-db.ps1` applies it after V21. **Not yet applied to `royal`.** |
 | `V23__product_bulk_import.sql` | The Excel bulk product import: staging tables `import_batch` and `import_batch_row` (an uploaded sheet is parsed and kept for review; nothing reaches `product` until it is committed), and the informational specification attributes the furniture sheet fills (dimensions, materials, colours, comfort, warranty: TEXT / NUMBER / BOOLEAN, never variant-defining), with Arabic and English names, linked to the `bar-stools` and `chairs` categories when they exist. `MATERIAL`, `WARRANTY` and `LEAD_TIME` are created only on a database that lacks them. An attribute whose code exists is left alone. One transaction, re-runnable. `create-test-db.ps1` applies it after V22. Applied to `royal` on 2026-10-29. |
+| `V25__product_image_import.sql` | The bulk image import: `product_image.content_hash` (`CHAR(64)`, SHA-256 of the stored bytes, so the same picture is never attached to the same product twice; unique per product where set, via `uq_img_product_hash`) and `product_image.import_run_id` (`VARCHAR(36)`, the id one run of the "Import images" screen sends with every request, so a run's own images can be told from the ones that were there before it; `ix_img_run`). Existing rows keep both NULL, nothing is rewritten. One transaction per step, re-runnable. `create-test-db.ps1` applies it after V23. **There is no V24 on purpose:** an earlier V24 was applied by hand to `royal` and `royal_test` and then removed again (its column dropped by hand), and these databases carry no migration ledger, so that number cannot be proven clean. Applied to `royal` and `royal_test` on 2026-10-31. |
 | `../db-royal/reset-demo-transactions.sql` | **Demo data only - deletes orders, invoices and custom requests.** Wipes test activity and resets the invoice and custom-request counters; keeps the catalogue, portfolio, shipping, store profile and users. Refuses any database not named `royal`. Take a backup first and stop the app before running. Prints the `custom-requests/` and `invoices/` folders to clean by hand. Not part of the schema history. |
 
 There is no `V1`. The original schema script is gone and was never in this repository; the baseline
@@ -143,3 +144,26 @@ becomes a nuisance.
 
 **A row written by a script that bypasses the service** (direct SQL) is not capped. Over 849
 characters it would fail with error 1946.
+
+## Uploaded files are not in the database
+
+Product images (and invoices, custom-request attachments, portfolio pictures) are **files on disk**, under
+`velora.storage.local-path` in `application.yml` (`D:/ibrahim_watches/royal-uploads`). The database holds only
+their keys. A restored database without that folder points at pictures that do not exist, and a restored
+folder without the database is a pile of anonymous files.
+
+**Backing up `royal-uploads` is the owner's responsibility** (decided 2026-10-31). Nothing in this repository
+copies it, and it does not survive a container rebuild. Back it up together with the database, from the same
+moment.
+
+**Known gaps in file handling**
+- **Orphan files.** A file written for an image whose transaction then does not commit is deleted again
+  (`StorageTransactionSupport`). If the *process dies* between the disk write and the commit, the file stays
+  with no `product_image` row. No sweep job exists. To find them, list `products/` and compare with
+  `product_image.url`.
+- **No thumbnails, no server-side resizing.** `product_image.thumb_url` is never written. The "Import images"
+  screen shrinks pictures in the browser; the 48 images uploaded before it (93 MB) are still full size.
+- **Excel template column C («كود الصور»)** is read by nothing; in the real sheet it holds the category name.
+  It stays because removing it changes the template shape (`ImportTemplate.VERSION`) and would reject sheets
+  already filled in. Images are matched by SKU, not by that column.
+

@@ -8,8 +8,17 @@ public record ProductBulkStatusResponse(
         String action,
         @Schema(description = "How many distinct products were asked for") int requested,
         @Schema(description = "The products that changed") List<Long> succeeded,
-        @Schema(description = "The products left as they were, each with the reason") List<Skipped> skipped
+        @Schema(description = "The products left as they were, each with the reason") List<Skipped> skipped,
+        @Schema(description = """
+                Products that DID go live but have no image (code NO_IMAGE). A warning, not a refusal: a
+                made-to-order product may legitimately have no photo yet. Always empty for UNPUBLISH.""")
+        List<Warned> warnings
 ) {
+
+    @Schema(description = "A product that changed, with something worth knowing")
+    public record Warned(Long id, @Schema(description = "The product's Arabic name") String name,
+                         @Schema(description = "NO_IMAGE") String code) {
+    }
 
     @Schema(description = "A product that was not changed")
     public record Skipped(

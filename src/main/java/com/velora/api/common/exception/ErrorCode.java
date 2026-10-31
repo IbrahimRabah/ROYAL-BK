@@ -49,6 +49,10 @@ public enum ErrorCode {
     IMPORT_HAS_ERRORS("The import has rows with errors. Fix them in the preview, or fix the "
             + "sheet and upload it again; nothing was saved", HttpStatus.CONFLICT),
 
+    // ---- catalog: bulk image import ----
+    IMAGE_IMPORT_TOO_MANY_FILES("Too many files in one request. Send fewer files at a time",
+            HttpStatus.BAD_REQUEST),
+
     // ---- identity ----
     INVALID_CREDENTIALS("Invalid phone/email or password", HttpStatus.UNAUTHORIZED),
     ACCOUNT_SUSPENDED("This account has been suspended", HttpStatus.FORBIDDEN),

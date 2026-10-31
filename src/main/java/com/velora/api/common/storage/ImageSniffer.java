@@ -47,6 +47,19 @@ public final class ImageSniffer {
         return Optional.empty();
     }
 
+    /**
+     * HEIC/HEIF (what a phone saves). Not an accepted format, but worth naming: «this is a HEIC file» tells the
+     * person what to do, «not a valid image» does not.
+     */
+    public static boolean isHeic(byte[] head) {
+        if (head == null || head.length < 12 || !ascii(head, 4, 4).equals("ftyp")) {
+            return false;
+        }
+        String brand = ascii(head, 8, 4);
+        return brand.equals("heic") || brand.equals("heix") || brand.equals("hevc")
+                || brand.equals("hevx") || brand.equals("mif1") || brand.equals("msf1");
+    }
+
     private static boolean isJpeg(byte[] head) {
         return head.length >= 3
                 && head[0] == (byte) 0xFF && head[1] == (byte) 0xD8 && head[2] == (byte) 0xFF;

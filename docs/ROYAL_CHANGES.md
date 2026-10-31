@@ -283,6 +283,8 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 | `POST /admin/products/bulk-status` | نشر/إلغاء نشر منتجات كتير `{action:"PUBLISH"\|"UNPUBLISH", ids:[..]}` (أقصى 500). كل منتج في transaction لوحده والمتعذّر بيرجع في `skipped` بسببه. شاشة المنتجات بتستخدمه (تحديد + "نشر المحدد" + "نشر كل المسودات") |
 | `POST /admin/product-imports/{id}/commit` | اعتماد الشيت كله: كله أو ولا حاجة. مرفوض `409 IMPORT_HAS_ERRORS` لو فيه صف فيه خطأ |
 | `DELETE /admin/product-imports/{id}` | إلغاء المعاينة |
+| `POST /admin/product-images/match` | **استيراد الصور، الخطوة ١:** بنبعت **أسماء** الملفات بس (JSON) والسيرفر بيرد مين فيهم بتاع أنهي منتج. مفيش حاجة بتتحفظ |
+| `POST /admin/product-images/bulk` | **الخطوة ٢:** رفع صور قليلة في الطلب (أقصى ١٢ ملف، ويفضّل ٨) multipart. كل ملف له نتيجته وtransaction لوحده |
 
 **رفع المنتجات من Excel (V23):** الشاشة على خطوتين. ١) حمّل القالب وارفعه ⇒ بترجع `ImportBatchResponse`، وأي اختلاف في عناوين الأعمدة (اسم/ترتيب/ناقص/زيادة) بيرجع `400 IMPORT_TEMPLATE_MISMATCH` والرسالة بتسمّي كل عمود مختلف. ٢) اعرض الصفوف من `/rows` (كل صف: `data` المقروءة + `specifications` + `messages[]` بـ`code` و`severity`) وزرار "اعتماد" يتفعّل بـ`canSubmit` بس. القالب هو شيت الأثاث نفسه (شيت «كرسي البار» + شيت «SEO» **عناوين بس من غير بيانات**). كل رسالة بقت بتحدد `column` و`field` و`cell` (زي `AN5` أو `SEO!T7`) عشان الشاشة تقول المشكلة فين وتفتح تعديل الصف على نفس الحقل، والمقبول في الرفع هو الملف اللي عناوين الشيتين فيه مطابقة تمامًا. الفئة والـslug وبيانات الميتا من شيت SEO. أي قيمة غلط في خلية من خلايا المواصفات (زي "Number") بتطلع **تنبيه** والخلية بتتجاهل، مش خطأ بيوقف الرفع. الصف = منتج واحد بـ variant واحد (`sku`). كل صف بينشئ منتج `DRAFT`. نوع التنفيذ الفاضي = `MADE_TO_ORDER`. الصفوف الغير سليمة بتيجي الأول، و`validRows + errorRows = totalRows` دايمًا. الـ`PUT .../rows/{rowNo}` بيرجع كمان `affected` (صفوف تانية اتغيّرت بسبب التعديل زي تكرار SKU اتحل) تتحدّث مكانها من غير ما القايمة تتنقل. الاعتماد مش متاح غير لما كل الصفوف سليمة، والمنتجات بتتحفظ مسودات؛ النشر من قايمة المنتجات. الـSKU فريد على مستوى المتجر كله: صف SKU بتاعه موجود في منتج بيطلع خطأ `SKU_EXISTS` بيذكر المنتج، فرفع شيت اتعمله استيراد قبل كده بيتقفل لحد ما الـSKU يتغيّر. القائمة الكاملة بالأكواد في `VELORA_API_Contract.md` تحت "Product Bulk Import".
 
@@ -291,6 +293,65 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 `PUT /admin/portfolio/{id}` استبدال كامل: الحقول الاختيارية (`titleEn`, الوصفين, `categoryId`, `completedAt`) **بتتمسح لو ما اتبعتتش**؛ `slug` و`displayOrder` بيفضلوا. ابعت النموذج كله.
 
 ---
+
+**استيراد الصور من فولدر (V25):** الاسم هو الـSKU. `CH101.jpg` = الصورة الرئيسية، `CH101_2.jpg` و`CH101_3.png` … = صور إضافية بالترتيب (حتى ٢٠ لكل منتج). الامتداد وحالة الحروف والفولدر **مش مهمين**، الاسم بس. الاسم اللي يطابق SKU موجود بيتحط على منتجه، واللي يطابق ولا واحد بيطلع في `unmatched` مع اقتراح لو قريب («CH101 (1).jpg» ⇒ اقتراح CH101، مش بيتربط لوحده). ملفين لنفس المكان في نفس المنتج ⇒ `conflicts` ومفيش واحد منهم بيترفع.
+
+الخطوة ١ `POST /admin/product-images/match` — body: `{ "mode": "SKIP"|"ADD"|"REPLACE", "files": [{ "name", "sizeBytes", "folder" }] }` (أقصى ٥٠٠٠ اسم). الرد:
+
+```json
+{
+  "mode": "SKIP",
+  "summary": { "files": 8, "toUpload": 3, "productsSkipped": 0, "products": 2, "conflicts": 1, "unmatched": 3, "productsWithoutImage": 57 },
+  "products": [
+    {
+      "sku": "CH101", "productId": 9, "nameAr": "كرسي بار حديد…", "nameEn": "Iron Bar Stool…",
+      "categoryName": "كراسي بار", "status": "DRAFT", "existingImageCount": 0,
+      "action": "ATTACH",
+      "files": [
+        { "name": "CH101.jpg",   "folder": "كراسي بار", "position": 1, "sizeBytes": 2410000, "upload": true },
+        { "name": "CH101_2.png", "folder": "كراسي بار", "position": 2, "sizeBytes": 1820000, "upload": true }
+      ]
+    }
+  ],
+  "conflicts": [
+    { "sku": "CH109", "reason": "DUPLICATE_POSITION",
+      "files": [ { "name": "CH109.jpg", "folder": "كراسي بار", "position": 1, "sizeBytes": 1 },
+                 { "name": "CH109.png", "folder": "كراسي", "position": 1, "sizeBytes": 1 } ] }
+  ],
+  "unmatched": [
+    { "name": "CH101 (1).jpg", "sizeBytes": 1000, "reason": "NO_PRODUCT", "suggestionSku": "CH101", "suggestionPosition": 1 },
+    { "name": "CH110.heic",    "sizeBytes": 1000, "reason": "UNSUPPORTED_FORMAT", "sku": "CH110" },
+    { "name": "Thumbs.db",     "sizeBytes": 1000, "reason": "NOT_AN_IMAGE" }
+  ],
+  "productsWithoutImage": { "total": 57, "items": [ { "productId": 12, "sku": "CH111", "nameAr": "…", "nameEn": "…" } ] }
+}
+```
+
+- `action` للمنتج: `ATTACH` · `SKIP_HAS_IMAGES` (المود SKIP وعنده صور) · `BLOCKED` (`blockedReason: PRODUCT_ARCHIVED`). `files[].upload=false` معناها الملف ده مش هيترفع، والسبب في `problem` (`DUPLICATE_POSITION` أو `TOO_MANY_IMAGES`). `variantId` بييجي بس لو المنتج له أكتر من variant.
+- `unmatched[].reason`: `NO_PRODUCT` · `NOT_AN_IMAGE` · `UNSUPPORTED_FORMAT` (HEIC/HEIF/TIFF/SVG… الاسم ممكن يطابق SKU، وساعتها `sku` موجود) · `AMBIGUOUS_NAME` (الاسم يطابق SKUين). الحقول الفاضية **مش بتتبعت** (مفتاح ناقص مش `null`).
+- `productsWithoutImage` أحدث ٢٠٠ منتج بدون صورة ومفيش ليه ملف في الاختيار، و`total` العدد الكلي.
+
+الخطوة ٢ `POST /admin/product-images/bulk` — multipart: `runId` (UUID بتعمله الشاشة **مرة واحدة** وبتبعته مع كل طلبات التشغيلة، وبتعيده عند إعادة المحاولة)، `mode`، و`files` (أقصى ١٢). **اسم الملف المبعوت هو اسمه الأصلي** (ده قاعدة الـSKU)، لكن الـbytes ممكن تكون النسخة المصغّرة. السيرفر بيفحص الـbytes مش الامتداد. الرد:
+
+```json
+{
+  "runId": "5f0c2a4e-1b7d-4d0e-9c53-2f7c1a9b6e11",
+  "mode": "SKIP",
+  "counts": { "attached": 1, "skipped": 1, "rejected": 1, "failed": 0 },
+  "results": [
+    { "name": "CH101.jpg",   "status": "ATTACHED", "sku": "CH101", "productId": 9, "imageId": 311,
+      "url": "http://localhost:8081/uploads/products/2026/10/3a….webp" },
+    { "name": "CH102.jpg",   "status": "SKIPPED",  "code": "HAS_IMAGES", "sku": "CH102", "productId": 10 },
+    { "name": "CH103.jpg",   "status": "REJECTED", "code": "NOT_AN_IMAGE", "sku": "CH103", "productId": 11 }
+  ]
+}
+```
+
+- `status`: `ATTACHED` · `SKIPPED` (`HAS_IMAGES`، `DUPLICATE_IMAGE` = نفس الصورة موجودة على المنتج) · `REJECTED` (`NO_MATCH`, `AMBIGUOUS_NAME`, `UNSUPPORTED_FORMAT`, `NOT_AN_IMAGE`, `TOO_LARGE`, `EMPTY_FILE`, `PRODUCT_ARCHIVED`, `LIMIT_REACHED`, `DUPLICATE_POSITION`) · `FAILED` (`SERVER_ERROR`، الوحيدة اللي تتعاد). الطلب بيرجع `200` حتى لو كل الملفات اترفضت؛ ترتيب `results` = ترتيب الملفات المبعوتة. `400` بس لو `runId` مش UUID أو مفيش ملفات أو أكتر من ١٢ (`IMAGE_IMPORT_TOO_MANY_FILES`).
+- **المودات:** `SKIP` (الافتراضي) بيسيب المنتج اللي كان عنده صور **قبل التشغيلة**، وصور نفس التشغيلة مش بتتحسب عليه؛ `ADD` بيضيف بعد الموجود؛ `REPLACE` بيمسح صور ما قبل التشغيلة (صفوف وملفات) ويحط الجديدة. الشاشة بتطلب تأكيد قبل `REPLACE`.
+- الصورة الرئيسية = `SKU` حتى لو `SKU_2` وصلت الأول. الـalt عربي/إنجليزي من اسم المنتج (`… - 2` للإضافية). نفس الصورة (SHA-256) على نفس المنتج مش بتتكرر. التشغيل التاني لنفس الفولدر مش بيعمل حاجة.
+- الشاشة بتصغّر الصورة في المتصفح (أطول ضلع ٢٠٠٠px، WebP جودة ٨٥ أو JPEG لو المتصفح ما بيكتبش WebP) لو أكبر من ١٫٥ ميجا، وبتبعت ٢ طلب في نفس الوقت. الأصل بيفضل في Drive.
+- **نشر منتج بدون صورة مسموح لكن بيحذّر:** `POST /admin/products/bulk-status` بيرجع كمان `warnings: [{ id, name, code: "NO_IMAGE" }]` للمنتجات اللي اتنشرت وعددها صفر صور (`imageCount` موجود أصلًا في `ProductAdminResponse`، والفلتر «بدون صور» في قايمة المنتجات بيشتغل عليه في المتصفح).
 
 ## ٣. ⚠️ اللي اتغيّر في سلوك قائم
 
@@ -510,6 +571,10 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 
 ---
 
+- **استيراد الصور — مفيش مسح للملفات اليتيمة.** لو الـprocess وقعت بين كتابة الملف على القرص وإنهاء الـtransaction، بيفضل ملف في `royal-uploads/products` مفيش صف بيشاور عليه. الفشل العادي (استثناء أو rollback) بيمسح الملف، لكن الوقوع المفاجئ لأ. اللازم job بيقارن الملفات بـ`product_image.url`؛ **مش معمول**.
+- **استيراد الصور — الـ٤٨ صورة اللي على القرص قبله** (٩٣ ميجا، كلها بحجمها الأصلي ومن غير thumb) ما اتعالجتش. ومفيش thumbnail في السيرفر: `thumb_url` لسه فاضي.
+- **نسخ `royal-uploads` الاحتياطي مسؤولية صاحب المشروع** (ملفات محلية على قرص واحد، مش بتتبني في container). مكتوب في `src/main/resources/db/README.md`.
+
 ## ٨. حاجات معروفة محتاجة إصلاح
 
 لا تأثير على الواجهة اليوم، لكن لازم تتصلّح.
@@ -521,6 +586,7 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
   - ثغرة امتداد الملف المرفوع (الامتداد كان بييجي من اسم الملف أو الـ Content-Type؛ هنا بيجي من البايتات الحقيقية).
   - سباق عدّاد الفواتير.
   - اتفقنا إنك هتطبّقهم بنفسك على VELORA الأصلي.
+- **عمود «كود الصور» (C) في قالب Excel مش مستخدم.** السيرفر بيتجاهله، وفي الشيت الحقيقي مكتوب فيه اسم القسم («كرسي البار») مش كود صورة. الصور بتتربط بالـSKU من شاشة استيراد الصور. العمود فضل في القالب عشان الشيت المعبّي يفضل مقبول؛ شيله بيغيّر شكل القالب (`ImportTemplate.VERSION`).
 - **إيميل تأكيد الطلب بيطبع المبالغ خام:** `${order.grandTotal}` من غير تنسيق، فبيطلع `1140.0000 EGP` (أربع خانات من الداتابيز) بدل `1,140.00 EGP`. الأرقام لاتينية والمبلغ صح، المشكلة في الشكل بس. لسه ما اتصلّحش.
 - **`ix_prod_search` وحد الـ 1700 بايت.** بناء قاعدة من الـ baseline بيطبع تحذير، وده متوقع ومش خطأ. الـ index ممكن نظريًا يعدّي الحد، والكود بيمنع ده (`search_text` محدود بـ 800 حرف، والحد الفعلي 849). التفاصيل في `src/main/resources/db/README.md` تحت "Known issues". ما تصلّحش التحذير بتعديل الـ baseline.
 - **عمر الطلب في طوابير الداشبورد بيتحسب من `updated_at` مش من وقت دخوله الحالة الحالية.** أي تعديل على الطلب (ملاحظة مثلًا) بيصفّر العدّاد ويخفي طلب متأخر فعلًا. الإصلاح الصحيح عمود `status_changed_at`. اتسجّل بس ولسه ما اتصلّحش.

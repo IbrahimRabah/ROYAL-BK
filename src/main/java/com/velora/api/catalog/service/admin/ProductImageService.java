@@ -9,6 +9,7 @@ import com.velora.api.catalog.repository.ProductVariantRepository;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.storage.StorageService;
+import com.velora.api.common.storage.StorageTransactionSupport;
 import com.velora.api.common.storage.StoredFile;
 import java.util.List;
 import org.slf4j.Logger;
@@ -32,18 +33,24 @@ public class ProductImageService {
     private final ProductRepository productRepository;
     private final ProductVariantRepository variantRepository;
     private final StorageService storageService;
+    private final StorageTransactionSupport storageSupport;
 
     public ProductImageService(ProductRepository productRepository,
                                ProductVariantRepository variantRepository,
-                               StorageService storageService) {
+                               StorageService storageService,
+                               StorageTransactionSupport storageSupport) {
         this.productRepository = productRepository;
         this.variantRepository = variantRepository;
         this.storageService = storageService;
+        this.storageSupport = storageSupport;
     }
 
     @Transactional
     public ImageResponse upload(Long productId, MultipartFile file, Long variantId) {
-        Product product = load(productId);
+        // Locked until commit: two uploads for one product are checked one after the other, so the
+        // limit and «the first image is the main one» are decided on what is really stored.
+        Product product = productRepository.findByIdForUpdate(productId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
         if (product.getImages().size() >= MAX_IMAGES_PER_PRODUCT) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -51,6 +58,8 @@ public class ProductImageService {
         }
 
         StoredFile stored = storageService.store(file, "products");
+        // The file is on disk before the row exists: if this transaction does not commit, it must not stay.
+        storageSupport.deleteUnlessCommitted(stored.key());
 
         ProductImage image = new ProductImage();
         image.setProduct(product);
