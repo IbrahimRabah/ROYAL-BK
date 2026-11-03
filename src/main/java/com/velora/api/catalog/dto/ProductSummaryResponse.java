@@ -35,6 +35,10 @@ public record ProductSummaryResponse(
         @Schema(description = "The piece has to be assembled on delivery")
         boolean requiresAssembly,
         @Schema(description = "Assembly fee PER PIECE, tax-inclusive. Zero when no assembly is needed.")
-        BigDecimal assemblyFee
+        BigDecimal assemblyFee,
+        @io.swagger.v3.oas.annotations.media.Schema(description = "Average stars of the approved reviews, absent when there are none")
+        BigDecimal ratingAvg,
+        @io.swagger.v3.oas.annotations.media.Schema(description = "How many approved reviews")
+        Integer ratingCount
 ) {
 }

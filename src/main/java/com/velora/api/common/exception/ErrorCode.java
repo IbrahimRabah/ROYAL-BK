@@ -53,6 +53,11 @@ public enum ErrorCode {
     IMAGE_IMPORT_TOO_MANY_FILES("Too many files in one request. Send fewer files at a time",
             HttpStatus.BAD_REQUEST),
 
+    // ---- catalog: reviews ----
+    REVIEW_NOT_FOUND("Review not found", HttpStatus.NOT_FOUND),
+    REVIEW_NOT_ELIGIBLE("You can review a product after it has been delivered to you", HttpStatus.FORBIDDEN),
+    REVIEW_ALREADY_DECIDED("This review is already in that state", HttpStatus.CONFLICT),
+
     // ---- identity ----
     INVALID_CREDENTIALS("Invalid phone/email or password", HttpStatus.UNAUTHORIZED),
     ACCOUNT_SUSPENDED("This account has been suspended", HttpStatus.FORBIDDEN),

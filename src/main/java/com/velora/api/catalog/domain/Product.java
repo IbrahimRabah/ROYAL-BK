@@ -142,6 +142,14 @@ public class Product extends BaseAuditEntity {
             + "where v.product_id = id and v.status = 'ACTIVE' and v.archived_at is null)")
     private Integer availableQty;
 
+    /** The average stars of the APPROVED reviews; null when there are none. A pending review never counts. */
+    @Formula("(select cast(avg(cast(r.rating as decimal(5,2))) as decimal(3,2)) from product_review r "
+            + "where r.product_id = id and r.status = 'APPROVED')")
+    private BigDecimal ratingAvg;
+
+    @Formula("(select count(*) from product_review r where r.product_id = id and r.status = 'APPROVED')")
+    private Integer ratingCount;
+
     // ------------------------------------------------------------------ helpers
 
     public boolean isArchived() {

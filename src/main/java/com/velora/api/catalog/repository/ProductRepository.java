@@ -52,6 +52,11 @@ public interface ProductRepository
     @Query("select i.product.id, count(i) from ProductImage i where i.product.id in :ids group by i.product.id")
     java.util.List<Object[]> countImagesByProduct(@Param("ids") java.util.Collection<Long> ids);
 
+    /** The id of a product that is on sale, by slug: what the public reviews list needs, without the heavy graph. */
+    @Query("select p.id from Product p where p.slug = :slug and p.archivedAt is null "
+            + "and p.status = com.velora.api.catalog.domain.ProductStatus.ACTIVE")
+    Optional<Long> findActiveIdBySlug(@Param("slug") String slug);
+
     boolean existsBySlug(String slug);
 
     /** Archived products count too: they still reference their category. */

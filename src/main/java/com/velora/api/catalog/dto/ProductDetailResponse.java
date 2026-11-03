@@ -40,6 +40,10 @@ public record ProductDetailResponse(
         @Schema(description = "Assembly fee PER PIECE, tax-inclusive, added to the order when the "
                 + "piece is bought. Zero when no assembly is needed.")
         BigDecimal assemblyFee,
+        @Schema(description = "Average stars of the approved reviews; absent when there are none")
+        BigDecimal ratingAvg,
+        @Schema(description = "How many approved reviews")
+        Integer ratingCount,
         SeoResponse seo
 ) {
 

@@ -73,7 +73,9 @@ public class CatalogMapper {
                 product.getFulfillmentType(),
                 product.getShippingSizeClass(),
                 product.isRequiresAssembly(),
-                product.effectiveAssemblyFee());
+                product.effectiveAssemblyFee(),
+                product.getRatingAvg(),
+                product.getRatingCount());
     }
 
     public ProductDetailResponse toDetail(Product product,
@@ -107,6 +109,8 @@ public class CatalogMapper {
                 product.getShippingSizeClass(),
                 product.isRequiresAssembly(),
                 product.effectiveAssemblyFee(),
+                product.getRatingAvg(),
+                product.getRatingCount(),
                 new ProductDetailResponse.SeoResponse(
                         translation == null ? null : translation.getMetaTitle(),
                         translation == null ? null : translation.getMetaDescription(),

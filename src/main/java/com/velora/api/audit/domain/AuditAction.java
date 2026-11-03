@@ -84,6 +84,9 @@ public enum AuditAction {
     /** Roles granted or revoked. */
     PERMISSION_CHANGED,
 
+    /** A customer review was approved, rejected or deleted. oldValue / newValue are the statuses (DELETED for a delete). */
+    REVIEW_MODERATED,
+
     /** Seller legal details changed — these end up printed on invoices. */
     STORE_PROFILE_CHANGED;
 
