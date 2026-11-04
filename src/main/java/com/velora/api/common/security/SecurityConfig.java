@@ -67,6 +67,8 @@ public class SecurityConfig {
             "/api/v1/brands/**",
             "/api/v1/portfolio/**",
             "/api/v1/search/**",
+            "/api/v1/faqs/**",
+            "/api/v1/seo/**",
             "/api/v1/variants/*/availability",
             "/api/v1/geo/**",
             "/api/v1/ping",
@@ -120,6 +122,10 @@ public class SecurityConfig {
                         // is guarded by a signed per-request token, not by login.
                         .requestMatchers(HttpMethod.POST, "/api/v1/custom-requests",
                                 "/api/v1/custom-requests/*/attachments").permitAll()
+                        // The SEO team: its own screens and nothing else of the admin. Must come before the
+                        // blanket admin rule below.
+                        .requestMatchers("/api/v1/admin/seo/**", "/api/v1/admin/faqs/**")
+                        .hasAnyRole("ADMIN", "SEO_EDITOR")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter,

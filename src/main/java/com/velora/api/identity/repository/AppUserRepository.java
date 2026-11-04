@@ -26,6 +26,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
             """)
     Optional<AppUser> findByEmailOrPhone(@Param("identifier") String identifier);
 
+    /** Accounts that hold at least one of the given roles (the staff list), without duplicates. */
+    @Query("select distinct u from AppUser u join u.roles r where r.code in :codes order by u.id")
+    java.util.List<AppUser> findByRoleCodes(@Param("codes") java.util.Collection<String> codes);
+
     boolean existsByPhoneE164(String phoneE164);
 
     @Query("select count(u) > 0 from AppUser u where lower(u.email) = lower(:email)")

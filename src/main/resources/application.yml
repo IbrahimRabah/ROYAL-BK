@@ -78,6 +78,9 @@ springdoc:
     path: /v3/api-docs
 
 velora:
+  seo:
+    # The storefront origin the sitemap and robots.txt point at.
+    site-url: ${SITE_URL:http://localhost:4200}
   storage:
     local-path: D:/ibrahim_watches/royal-uploads
     public-url-prefix: http://localhost:8081/uploads

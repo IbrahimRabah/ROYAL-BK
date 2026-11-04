@@ -87,6 +87,12 @@ public enum AuditAction {
     /** A customer review was approved, rejected or deleted. oldValue / newValue are the statuses (DELETED for a delete). */
     REVIEW_MODERATED,
 
+    /** A FAQ was created, edited, published, unpublished, reordered or deleted. */
+    FAQ_CHANGED,
+
+    /** A meta title or description (product, category or static page) changed. oldValue / newValue list the changed texts. */
+    SEO_CHANGED,
+
     /** Seller legal details changed — these end up printed on invoices. */
     STORE_PROFILE_CHANGED;
 

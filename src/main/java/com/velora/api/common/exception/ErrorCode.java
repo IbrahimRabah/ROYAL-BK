@@ -58,6 +58,13 @@ public enum ErrorCode {
     REVIEW_NOT_ELIGIBLE("You can review a product after it has been delivered to you", HttpStatus.FORBIDDEN),
     REVIEW_ALREADY_DECIDED("This review is already in that state", HttpStatus.CONFLICT),
 
+    // ---- seo, faq and team ----
+    FAQ_NOT_FOUND("FAQ not found", HttpStatus.NOT_FOUND),
+    SEO_PAGE_NOT_FOUND("Page not found", HttpStatus.NOT_FOUND),
+    TEAM_USER_NOT_FOUND("No account has this email", HttpStatus.NOT_FOUND),
+    TEAM_LAST_ADMIN("There must always be at least one administrator", HttpStatus.CONFLICT),
+    TEAM_SELF_CHANGE("You cannot change your own roles", HttpStatus.CONFLICT),
+
     // ---- identity ----
     INVALID_CREDENTIALS("Invalid phone/email or password", HttpStatus.UNAUTHORIZED),
     ACCOUNT_SUSPENDED("This account has been suspended", HttpStatus.FORBIDDEN),
