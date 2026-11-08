@@ -53,6 +53,13 @@ spring:
 
 server:
   port: 8081
+  # Gzip for API responses (a 24-product list is 16 KB of JSON). Images are already compressed, so they are not
+  # listed. When a reverse proxy in front already compresses (nginx, Cloudflare), switch this off there or here,
+  # never both.
+  compression:
+    enabled: true
+    min-response-size: 1KB
+    mime-types: application/json,application/problem+json,text/plain,text/css,application/javascript,text/html,application/xml
   # Behind ngrok or any reverse proxy the scheme and host the client used arrive in
   # X-Forwarded-* headers; without this, generated links point at localhost:8081.
   # The CLIENT IP is a separate matter — see ClientIpResolver, which reads
