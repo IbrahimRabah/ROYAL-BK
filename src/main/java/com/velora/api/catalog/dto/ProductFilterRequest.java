@@ -40,6 +40,9 @@ public record ProductFilterRequest(
         @Schema(example = "READY_MADE", description = "How the product is sold")
         FulfillmentType fulfillmentType,
 
+        @Schema(description = "Only products that are cheaper right now because of a running promotion")
+        Boolean onSale,
+
         @Schema(example = "newest",
                 allowableValues = {"newest", "price_asc", "price_desc", "name"})
         String sort

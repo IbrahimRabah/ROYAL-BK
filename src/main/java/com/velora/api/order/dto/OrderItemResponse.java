@@ -31,6 +31,10 @@ public record OrderItemResponse(
         @Schema(description = "assemblyFee x quantity — what assembling this line cost")
         BigDecimal assemblyTotal,
         int quantityReturned,
-        int returnableQuantity
+        int returnableQuantity,
+        @Schema(description = "The regular price per piece when a promotion lowered it at purchase, otherwise absent")
+        BigDecimal listUnitPrice,
+        @Schema(description = "The promotion that lowered the price at purchase, otherwise absent")
+        String promotionName
 ) {
 }

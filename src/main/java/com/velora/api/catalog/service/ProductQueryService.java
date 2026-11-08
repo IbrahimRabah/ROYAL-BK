@@ -64,6 +64,7 @@ public class ProductQueryService {
                 .and(ProductSpecifications.isFeatured(filter.featured()))
                 .and(ProductSpecifications.isNewArrival(filter.newArrival()))
                 .and(ProductSpecifications.hasFulfillmentType(filter.fulfillmentType()))
+                .and(ProductSpecifications.onSale(filter.onSale()))
                 .and(ProductSpecifications.matches(filter.q(), locale));
 
         Pageable effective = applySort(pageable, filter.sortOrDefault());
@@ -102,13 +103,13 @@ public class ProductQueryService {
 
     public PageResponse<ProductSummaryResponse> findFeatured(Pageable pageable, String locale) {
         ProductFilterRequest filter = new ProductFilterRequest(
-                null, null, null, null, null, null, true, true, null, null, "newest");
+                null, null, null, null, null, null, true, true, null, null, null, "newest");
         return search(filter, pageable, locale);
     }
 
     public PageResponse<ProductSummaryResponse> findNewArrivals(Pageable pageable, String locale) {
         ProductFilterRequest filter = new ProductFilterRequest(
-                null, null, null, null, null, null, true, null, true, null, "newest");
+                null, null, null, null, null, null, true, null, true, null, null, "newest");
         return search(filter, pageable, locale);
     }
 
@@ -117,15 +118,15 @@ public class ProductQueryService {
     /**
      * Maps the API's sort keys onto entity properties.
      *
-     * <p>{@code price_asc} sorts on {@code minPrice}, which is a {@code @Formula}
+     * <p>{@code price_asc} sorts on {@code effectiveMinPrice}, which is a {@code @Formula}
      * field. That is why the formula exists: a Java-side calculation could not be
      * used in an ORDER BY, and sorting a single page in memory would give the wrong
      * order across pages.
      */
     private Pageable applySort(Pageable pageable, String sortKey) {
         Sort sort = switch (sortKey) {
-            case "price_asc" -> Sort.by(Sort.Direction.ASC, "minPrice");
-            case "price_desc" -> Sort.by(Sort.Direction.DESC, "minPrice");
+            case "price_asc" -> Sort.by(Sort.Direction.ASC, "effectiveMinPrice");
+            case "price_desc" -> Sort.by(Sort.Direction.DESC, "effectiveMinPrice");
             case "name" -> Sort.by(Sort.Direction.ASC, "slug");
             // TODO: "best_selling" needs order data — add when the order module lands.
             default -> Sort.by(Sort.Direction.DESC, "createdAt");

@@ -29,6 +29,12 @@ public record CartItemResponse(
 
         boolean inStock,
 
-        BigDecimal lineTotal
+        BigDecimal lineTotal,
+
+        @Schema(description = "The regular price per piece when a promotion lowers it, otherwise absent")
+        BigDecimal listPrice,
+
+        @Schema(description = "Whole-number percentage off the regular price, when a promotion applies")
+        Integer salePercent
 ) {
 }

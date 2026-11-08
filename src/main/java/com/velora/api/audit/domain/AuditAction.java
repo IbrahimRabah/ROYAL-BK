@@ -93,6 +93,12 @@ public enum AuditAction {
     /** A meta title or description (product, category or static page) changed. oldValue / newValue list the changed texts. */
     SEO_CHANGED,
 
+    /** A discount was created, edited, activated, paused, ended, given a banner or deleted. */
+    PROMOTION_CHANGED,
+
+    /** An announcement-bar message was created, edited, switched on or off, reordered or deleted. */
+    ANNOUNCEMENT_CHANGED,
+
     /** Seller legal details changed — these end up printed on invoices. */
     STORE_PROFILE_CHANGED;
 

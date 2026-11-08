@@ -142,6 +142,20 @@ public class Product extends BaseAuditEntity {
             + "where v.product_id = id and v.status = 'ACTIVE' and v.archived_at is null)")
     private Integer availableQty;
 
+    /**
+     * The lowest and highest price a customer would pay RIGHT NOW: each active variant's price less the biggest
+     * running promotion that reaches it, found by {@code dbo.fn_best_discount_percent} (V28). Used only by price filters
+     * and sorting, where it must be SQL; every price that is DISPLAYED comes from {@code PromotionPricingService}, and a
+     * test checks the two agree to the piastre.
+     */
+    @Formula("(select min(v.price - round(v.price * dbo.fn_best_discount_percent(v.product_id) / 100, 2)) "
+            + "from product_variant v where v.product_id = id and v.status = 'ACTIVE' and v.archived_at is null)")
+    private BigDecimal effectiveMinPrice;
+
+    @Formula("(select max(v.price - round(v.price * dbo.fn_best_discount_percent(v.product_id) / 100, 2)) "
+            + "from product_variant v where v.product_id = id and v.status = 'ACTIVE' and v.archived_at is null)")
+    private BigDecimal effectiveMaxPrice;
+
     /** The average stars of the APPROVED reviews; null when there are none. A pending review never counts. */
     @Formula("(select cast(avg(cast(r.rating as decimal(5,2))) as decimal(3,2)) from product_review r "
             + "where r.product_id = id and r.status = 'APPROVED')")

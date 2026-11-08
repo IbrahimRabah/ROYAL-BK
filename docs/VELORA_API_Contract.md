@@ -3049,6 +3049,147 @@ Result codes: SKIPPED `HAS_IMAGES` · `DUPLICATE_IMAGE`; REJECTED `NO_MATCH` · 
 
 ---
 
+
+## Product Reviews
+
+A customer reviews a product once, after an order of theirs that carried it is `DELIVERED`. A review is `PENDING` and visible only to its author and staff until staff approve it; editing an approved or rejected review sends it back to `PENDING`. Only `APPROVED` reviews are public. A product's `ratingAvg` and `ratingCount` (on list and detail responses, absent/0 when none) are computed from approved reviews only.
+
+### `GET /api/v1/products/{slug}/reviews` (public)
+Query: `page`, `size` (default 10). Newest first. `404 PRODUCT_NOT_FOUND` for an unknown or not-on-sale slug.
+```json
+{
+  "average": 3.50,
+  "count": 2,
+  "breakdown": { "5": 1, "4": 0, "3": 0, "2": 1, "1": 0 },
+  "reviews": { "content": [
+    { "id": 12, "reviewerName": "Ahmed M.", "rating": 5, "comment": "ممتاز جدا", "createdAt": "2026-11-03T10:15:00Z" }
+  ], "page": 0, "size": 10, "totalElements": 2, "totalPages": 1, "first": true, "last": true, "empty": false }
+}
+```
+`reviewerName` is the first name and the initial of the last. `average` is absent when `count` is 0.
+
+### Customer — `/api/v1/me/reviews` (signed in)
+| Call | What |
+|---|---|
+| `GET /me/reviews/eligible` | `[{ productId, slug, name, imageUrl, orderNumber }]`: products on a delivered order of mine with no review of mine |
+| `GET /me/reviews?page=&size=` | my reviews, newest first (`PageResponse<MyReviewResponse>`); every state is visible to me |
+| `POST /me/reviews` | `{ productId, rating 1-5, comment? ≤2000 }` ⇒ `201 MyReviewResponse` (status PENDING) |
+| `PUT /me/reviews/{id}` | `{ rating, comment? }` ⇒ `MyReviewResponse`, back to PENDING |
+
+```json
+{
+  "id": 12, "productId": 9, "productSlug": "iron-bar-stool-ch101", "productName": "كرسي بار حديد…",
+  "orderNumber": "RYL-2026-000123", "rating": 5, "comment": "ممتاز جدا",
+  "status": "PENDING", "createdAt": "2026-11-03T10:15:00Z", "updatedAt": "2026-11-03T10:15:00Z"
+}
+```
+`moderationNote` appears only on a `REJECTED` review. Errors: `403 REVIEW_NOT_ELIGIBLE` (no delivered order carried it), `409 REVIEW_ALREADY_EXISTS`, `404 REVIEW_NOT_FOUND` (also for another customer's review id), `404 PRODUCT_NOT_FOUND`, `400 VALIDATION_FAILED` (rating outside 1-5, comment too long), `401` signed out.
+
+### Staff — `/api/v1/admin/reviews` (ROLE_ADMIN)
+| Call | What |
+|---|---|
+| `GET /admin/reviews?status=&productId=&rating=&q=&page=&size=` | `PageResponse<AdminReviewResponse>`, newest first. `status` PENDING / APPROVED / REJECTED, omit for all. `q` searches comment, reviewer name and order number |
+| `GET /admin/reviews/counts` | `{ pending, approved, rejected, total }` for the tabs and the sidebar badge |
+| `POST /admin/reviews/{id}/approve` | body `{ note? }` optional ⇒ the review is public |
+| `POST /admin/reviews/{id}/reject` | body `{ note? }` optional; also how an approved review is taken down («hide»). The note is shown to the customer |
+| `POST /admin/reviews/bulk` | `{ action: APPROVE\|REJECT, ids: [≤500], note? }` ⇒ `{ action, requested, succeeded: [ids], skipped: [{ id, reason }] }`; each review is its own transaction; reasons `REVIEW_NOT_FOUND`, `ALREADY_APPROVED`, `ALREADY_REJECTED` |
+| `DELETE /admin/reviews/{id}` | permanent (spam); `204`, then `404` |
+
+```json
+{
+  "id": 12, "productId": 9, "productSlug": "iron-bar-stool-ch101", "productName": "كرسي بار حديد…",
+  "customerId": 41, "customerName": "Ahmed Mansour", "reviewerName": "Ahmed M.",
+  "orderNumber": "RYL-2026-000123", "rating": 5, "comment": "ممتاز جدا", "status": "APPROVED",
+  "moderatedBy": 3, "moderatedAt": "2026-11-03T11:00:00Z", "createdAt": "2026-11-03T10:15:00Z"
+}
+```
+`409 REVIEW_ALREADY_DECIDED` when a single approve/reject finds the review already in that state. Every decision writes an audit entry `REVIEW_MODERATED` (entity `PRODUCT_REVIEW`, old and new status, the note, the actor).
+
+**Schema:** `V26__product_review.sql` (`product_review`, unique per customer and product). The averages are an `@Formula` on `Product` over the approved rows, like `minPrice`, so there is nothing to keep in sync.
+
+**Not built:** customer e-mail on approval or rejection, review photos, a rate limit on writing, a dashboard tile (the sidebar badge shows the waiting count).
+
+---
+
+
+## SEO, FAQs and the Team
+
+The SEO team edits what search engines read, and writes FAQs, from their own corner of the admin. Roles: `ADMIN` (everything) and `SEO_EDITOR`, which is allowed ONLY on `/api/v1/admin/seo/**` and `/api/v1/admin/faqs/**` (every other admin path answers `403` to it). The owner gives each person's own account a role in the Team screen instead of sharing a login. Schema: `V27__faq_and_seo.sql` (`faq_item`, `seo_page`, the `SEO_EDITOR` role).
+
+### Public (no sign-in)
+| Call | What |
+|---|---|
+| `GET /products/{slug}/faqs` | published FAQs of a product, in order (`404 PRODUCT_NOT_FOUND` if not on sale) |
+| `GET /categories/{id}/faqs` | published FAQs of a category (`404 CATEGORY_NOT_FOUND`) |
+| `GET /faqs?topic=` | the general FAQ; topics `GENERAL, ORDERS, SHIPPING, PAYMENT, RETURNS, CUSTOM_WORK, CHECKOUT` |
+| `GET /seo/pages/{key}` | `{ title?, description?, noindex }` of a static page; keys `HOME, PRODUCTS, ABOUT, CONTACT, PORTFOLIO, CUSTOM_REQUEST, FAQ`; an unknown key is `200` with nothing set |
+| `GET /seo/sitemap.xml`, `GET /seo/robots.txt` | built from what is on sale; the storefront server serves them at `/sitemap.xml` and `/robots.txt` |
+
+FAQ answer in the language of `Accept-Language` (Arabic when the English pair is missing):
+```json
+[
+  { "id": 4, "question": "كم يستغرق التوصيل؟", "answer": "من 3 إلى 7 أيام عمل حسب المحافظة.", "topic": "SHIPPING" }
+]
+```
+The sitemap lists the static pages (not the ones marked `noindex`), categories that have products, ACTIVE products and published portfolio items, with `velora.seo.site-url` (env `SITE_URL`) as the origin. `robots.txt` closes `/admin /me /auth /cart /checkout /wishlist` and names the sitemap.
+
+### SEO — `/admin/seo` (ADMIN or SEO_EDITOR)
+| Call | What |
+|---|---|
+| `GET /admin/seo/overview` | counts, measured on the Arabic text of products on sale, active product categories and the static pages |
+| `GET /admin/seo/products?q=&filter=&status=&page=&size=` | products with their SEO text; `filter`: `ALL, MISSING_TITLE, MISSING_DESCRIPTION, TOO_LONG, DUPLICATE, NO_FAQ`; `status` ACTIVE or DRAFT; archived never listed; size at most 100 |
+| `PUT /admin/seo/products/{id}` | body `{ metaTitleAr, metaDescriptionAr, metaTitleEn, metaDescriptionEn }`; a blank value clears it; the English pair is ignored when the product has no English translation. Nothing else of the product changes |
+| `GET /admin/seo/categories`, `PUT /admin/seo/categories/{id}` | the same for product categories |
+| `GET /admin/seo/pages`, `PUT /admin/seo/pages/{key}` | static pages; body `{ titleAr, descriptionAr, titleEn, descriptionEn, noindex }`; `404 SEO_PAGE_NOT_FOUND` |
+
+```json
+{
+  "products":   { "total": 154, "missingTitle": 120, "missingDescription": 120, "titleTooLong": 3,
+                  "descriptionTooLong": 5, "duplicateTitle": 2, "withoutFaq": 154 },
+  "categories": { "total": 12, "missingTitle": 12, "missingDescription": 12, "withoutFaq": 12 },
+  "pages":      { "total": 7, "missingTitle": 7, "missingDescription": 7 },
+  "faqs":       { "published": 0, "drafts": 0 }
+}
+```
+`SeoRowResponse` (products and categories; empty texts are absent, `duplicateTitle` is true when another live product has the same Arabic title):
+```json
+{ "id": 9, "slug": "iron-bar-stool-ch101", "status": "ACTIVE", "name": "كرسي بار حديد…",
+  "metaTitleAr": "كرسي بار حديد أبيض | رويال آيرون", "metaDescriptionAr": "…",
+  "metaTitleEn": "White iron bar stool", "metaDescriptionEn": "…", "faqCount": 2, "duplicateTitle": false }
+```
+Every change writes an audit entry `SEO_CHANGED` listing the changed texts old and new, with the actor.
+
+### FAQs — `/admin/faqs` (ADMIN or SEO_EDITOR)
+| Call | What |
+|---|---|
+| `GET /admin/faqs?scope=&targetId=&status=&topic=&q=&page=&size=&sort=position,asc` | every state, `PageResponse<AdminFaqResponse>` |
+| `POST /admin/faqs`, `PUT /admin/faqs/{id}` | `{ scope PRODUCT\|CATEGORY\|GENERAL, targetId?, topic?, questionAr, answerAr, questionEn?, answerEn?, position?, status DRAFT\|PUBLISHED }`. PRODUCT and CATEGORY need `targetId`; GENERAL must not have one and defaults to topic GENERAL. English is stored only when BOTH question and answer are given. Plain text, at most 500 / 2000 characters |
+| `DELETE /admin/faqs/{id}` | `204`, then `404 FAQ_NOT_FOUND` |
+| `PUT /admin/faqs/reorder` | `{ ids: [...] }` in display order ⇒ `{ reordered }` |
+| `POST /admin/faqs/bulk-status` | `{ ids: [≤500], status }` ⇒ `{ changed }` |
+
+```json
+{ "id": 4, "scope": "PRODUCT", "targetId": 9, "targetName": "كرسي بار حديد…", "topic": null,
+  "questionAr": "هل الكرسي يحتاج تركيب؟", "answerAr": "لا، يصل جاهزًا.", "questionEn": null, "answerEn": null,
+  "position": 0, "status": "PUBLISHED", "createdAt": "2026-11-03T10:00:00Z", "updatedAt": "2026-11-03T10:00:00Z" }
+```
+Audited as `FAQ_CHANGED`.
+
+### Team — `/admin/team` (ADMIN only)
+| Call | What |
+|---|---|
+| `GET /admin/team` | accounts holding ADMIN or SEO_EDITOR: `[{ id, email, name, roles }]` |
+| `GET /admin/team/lookup?email=` | one account by email (case-insensitive); `404 TEAM_USER_NOT_FOUND` |
+| `PUT /admin/team/{userId}/roles` | `{ roles: ["ADMIN"\|"SEO_EDITOR"] }`, exactly the staff roles the account should have; an empty list makes it a customer again. `409 TEAM_SELF_CHANGE` for your own account, `409 TEAM_LAST_ADMIN` when it would leave no administrator, `400` for any other role |
+
+A role change is audited (`PERMISSION_CHANGED`) and reaches the person's session at their next sign-in or token refresh, because roles travel inside the access token.
+
+**Storefront head.** The Angular app now sets, on every page, the title, description, canonical URL, robots, Open Graph and Twitter tags; product pages add Product (price, stock, rating from the reviews) and BreadcrumbList structured data; FAQ blocks add FAQPage data built from exactly the questions drawn. Private areas (`/admin /me /auth /cart /checkout /wishlist`) are `noindex`.
+
+**Known limits.** The shop is indexed in Arabic only: English and Arabic share one URL (a language toggle), so there is no hreflang. Slugs cannot be edited from the SEO screens, and there is no redirects table. Page caching, if added, must be cleared when a text changes.
+
+---
+
 ## Health Check
 Base path: `/api/v1`
 

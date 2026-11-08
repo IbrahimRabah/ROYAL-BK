@@ -89,6 +89,16 @@ public class OrderItem {
     @Column(name = "allocated_cart_discount", nullable = false, precision = 19, scale = 4)
     private BigDecimal allocatedCartDiscount = BigDecimal.ZERO;
 
+    /** What this piece would have cost without a promotion; null when none applied. Frozen like the price. */
+    @Column(name = "list_price_gross", precision = 19, scale = 4)
+    private BigDecimal listPriceGross;
+
+    @Column(name = "promotion_id")
+    private Long promotionId;
+
+    @Column(name = "promotion_name", length = 200)
+    private String promotionName;
+
     /** The rate in force at purchase. Rates change; invoices must not. */
     @Column(name = "tax_rate", nullable = false, precision = 5, scale = 4)
     private BigDecimal taxRate;

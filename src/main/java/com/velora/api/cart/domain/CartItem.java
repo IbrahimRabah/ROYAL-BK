@@ -53,7 +53,8 @@ public class CartItem {
     @Column(name = "added_at", nullable = false, updatable = false)
     private OffsetDateTime addedAt = OffsetDateTime.now(ZoneOffset.UTC);
 
-    public boolean priceChanged() {
-        return variant.getPrice().compareTo(priceAtAdd) != 0;
+    /** Whether the price now (discounts included) differs from the one the customer saw when adding. */
+    public boolean priceChanged(BigDecimal currentPrice) {
+        return currentPrice.compareTo(priceAtAdd) != 0;
     }
 }

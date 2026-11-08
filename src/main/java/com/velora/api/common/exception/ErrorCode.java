@@ -65,6 +65,14 @@ public enum ErrorCode {
     TEAM_LAST_ADMIN("There must always be at least one administrator", HttpStatus.CONFLICT),
     TEAM_SELF_CHANGE("You cannot change your own roles", HttpStatus.CONFLICT),
 
+    // ---- marketing: promotions and announcements ----
+    PROMOTION_NOT_FOUND("Discount not found", HttpStatus.NOT_FOUND),
+    PROMOTION_BELOW_COST("This discount would sell some variants below their cost price", HttpStatus.CONFLICT),
+    PROMOTION_HIGH_DISCOUNT_UNCONFIRMED("A discount above 70 percent needs to be confirmed", HttpStatus.BAD_REQUEST),
+    PROMOTION_IN_USE("This discount is used by orders or an announcement. End it instead of deleting it", HttpStatus.CONFLICT),
+    PROMOTION_ALREADY_ENDED("This discount has already ended. Change its dates first", HttpStatus.CONFLICT),
+    ANNOUNCEMENT_NOT_FOUND("Announcement not found", HttpStatus.NOT_FOUND),
+
     // ---- identity ----
     INVALID_CREDENTIALS("Invalid phone/email or password", HttpStatus.UNAUTHORIZED),
     ACCOUNT_SUSPENDED("This account has been suspended", HttpStatus.FORBIDDEN),

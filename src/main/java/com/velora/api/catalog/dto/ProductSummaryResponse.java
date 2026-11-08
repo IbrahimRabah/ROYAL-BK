@@ -39,6 +39,8 @@ public record ProductSummaryResponse(
         @io.swagger.v3.oas.annotations.media.Schema(description = "Average stars of the approved reviews, absent when there are none")
         BigDecimal ratingAvg,
         @io.swagger.v3.oas.annotations.media.Schema(description = "How many approved reviews")
-        Integer ratingCount
+        Integer ratingCount,
+        @io.swagger.v3.oas.annotations.media.Schema(description = "When the running promotion that lowers this price ends; absent when none applies")
+        java.time.OffsetDateTime saleEndsAt
 ) {
 }

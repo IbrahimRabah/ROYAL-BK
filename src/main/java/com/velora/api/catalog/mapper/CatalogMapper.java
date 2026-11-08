@@ -26,6 +26,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.velora.api.marketing.service.PriceQuote;
+import com.velora.api.marketing.service.PromotionPricingService;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,9 +42,11 @@ import org.springframework.stereotype.Component;
 public class CatalogMapper {
 
     private final StorageService storageService;
+    private final PromotionPricingService pricing;
 
-    public CatalogMapper(StorageService storageService) {
+    public CatalogMapper(StorageService storageService, PromotionPricingService pricing) {
         this.storageService = storageService;
+        this.pricing = pricing;
     }
 
     // ------------------------------------------------------------------ product
@@ -50,7 +54,11 @@ public class CatalogMapper {
     public ProductSummaryResponse toSummary(Product product, String locale) {
         ProductImage main = product.mainImage();
         ProductImage hover = product.hoverImage();
-        ProductVariant cheapest = cheapestVariant(product);
+        List<ProductVariant> active = activeVariants(product);
+        Map<Long, PriceQuote> quotes = pricing.quoteAll(active);
+        ProductVariant cheapest = cheapestVariant(active, quotes);
+        PriceQuote cheapestQuote = cheapest == null ? null : quotes.get(cheapest.getId());
+        PriceQuote onSale = bestSale(quotes);
 
         return new ProductSummaryResponse(
                 product.getId(),
@@ -62,10 +70,11 @@ public class CatalogMapper {
                 main == null ? null : storageService.urlFor(main.getUrl()),
                 main == null ? null : main.altFor(locale),
                 hover == null ? null : storageService.urlFor(hover.getUrl()),
-                product.getMinPrice(),
-                product.getMaxPrice(),
-                cheapest == null ? null : cheapest.getCompareAtPrice(),
-                cheapest == null ? null : cheapest.discountPercent(),
+                // What the customer pays now. A product with no active variant keeps the stored range.
+                active.isEmpty() ? product.getMinPrice() : minPrice(quotes),
+                active.isEmpty() ? product.getMaxPrice() : maxPrice(quotes),
+                cheapestQuote == null ? null : cheapestQuote.compareAtPrice(),
+                cheapestQuote == null ? null : cheapestQuote.discountPercent(),
                 product.isInStock(),
                 product.getAvailableQty(),
                 product.isFeatured(),
@@ -75,13 +84,19 @@ public class CatalogMapper {
                 product.isRequiresAssembly(),
                 product.effectiveAssemblyFee(),
                 product.getRatingAvg(),
-                product.getRatingCount());
+                product.getRatingCount(),
+                onSale == null ? null : onSale.endsAt());
     }
 
     public ProductDetailResponse toDetail(Product product,
                                           List<ProductVariant> variants,
                                           String locale) {
         ProductTranslation translation = product.translationFor(locale);
+        Map<Long, PriceQuote> quotes = pricing.quoteAll(variants);
+        List<PriceQuote> sellable = variants.stream()
+                .filter(v -> v.getStatus() == VariantStatus.ACTIVE && v.getArchivedAt() == null)
+                .map(v -> quotes.get(v.getId())).toList();
+        PriceQuote sale = bestSale(quotes);
 
         return new ProductDetailResponse(
                 product.getId(),
@@ -92,9 +107,10 @@ public class CatalogMapper {
                 toBrand(product.getBrand(), locale),
                 buildBreadcrumb(product.getCategory(), locale),
                 new ProductDetailResponse.PriceRangeResponse(
-                        product.getMinPrice(), product.getMaxPrice()),
+                        sellable.isEmpty() ? product.getMinPrice() : minPrice(sellable),
+                        sellable.isEmpty() ? product.getMaxPrice() : maxPrice(sellable)),
                 buildVariantOptions(variants, locale),
-                variants.stream().map(v -> toVariant(v, product, locale)).toList(),
+                variants.stream().map(v -> toVariant(v, product, locale, quotes.get(v.getId()))).toList(),
                 buildSpecifications(product, locale),
                 // ProductRepository.findBySlugAndArchivedAtIsNull fetch-joins "images"
                 // alongside "translations" and "category.translations" — two Maps and a
@@ -111,6 +127,8 @@ public class CatalogMapper {
                 product.effectiveAssemblyFee(),
                 product.getRatingAvg(),
                 product.getRatingCount(),
+                sale == null ? null : new ProductDetailResponse.SaleResponse(sale.promotionId(),
+                        sale.promotionName(locale), sale.percent(), sale.endsAt()),
                 new ProductDetailResponse.SeoResponse(
                         translation == null ? null : translation.getMetaTitle(),
                         translation == null ? null : translation.getMetaDescription(),
@@ -120,6 +138,10 @@ public class CatalogMapper {
     // ------------------------------------------------------------------ variant
 
     public VariantResponse toVariant(ProductVariant variant, Product product, String locale) {
+        return toVariant(variant, product, locale, pricing.quote(variant));
+    }
+
+    private VariantResponse toVariant(ProductVariant variant, Product product, String locale, PriceQuote quote) {
         // See variantSummary() for why distinct() is required here.
         List<Long> valueIds = variant.getAttributeValues().stream()
                 .distinct()
@@ -137,9 +159,9 @@ public class CatalogMapper {
                 variant.getId(),
                 variant.getSku(),
                 variantSummary(variant, locale),
-                variant.getPrice(),
-                variant.getCompareAtPrice(),
-                variant.discountPercent(),
+                quote.price(),
+                quote.compareAtPrice(),
+                quote.discountPercent(),
                 valueIds,
                 variant.getAvailable(),
                 variant.isInStock(),
@@ -275,11 +297,39 @@ public class CatalogMapper {
         return t == null ? null : t.getShortDescription();
     }
 
-    private ProductVariant cheapestVariant(Product product) {
+    private static List<ProductVariant> activeVariants(Product product) {
         return product.getVariants().stream()
                 .filter(v -> v.getStatus() == VariantStatus.ACTIVE && v.getArchivedAt() == null)
-                .min(Comparator.comparing(ProductVariant::getPrice,
+                .toList();
+    }
+
+    /** The variant that costs the customer least right now. */
+    private static ProductVariant cheapestVariant(List<ProductVariant> active, Map<Long, PriceQuote> quotes) {
+        return active.stream()
+                .min(Comparator.comparing((ProductVariant v) -> quotes.get(v.getId()).price(),
                         Comparator.nullsLast(BigDecimal::compareTo)))
                 .orElse(null);
+    }
+
+    private static BigDecimal minPrice(Map<Long, PriceQuote> quotes) {
+        return minPrice(quotes.values());
+    }
+
+    private static BigDecimal minPrice(java.util.Collection<PriceQuote> quotes) {
+        return quotes.stream().map(PriceQuote::price).min(BigDecimal::compareTo).orElse(null);
+    }
+
+    private static BigDecimal maxPrice(Map<Long, PriceQuote> quotes) {
+        return maxPrice(quotes.values());
+    }
+
+    private static BigDecimal maxPrice(java.util.Collection<PriceQuote> quotes) {
+        return quotes.stream().map(PriceQuote::price).max(BigDecimal::compareTo).orElse(null);
+    }
+
+    /** The promotion with the biggest discount among the variants, for the badge and the countdown. */
+    private static PriceQuote bestSale(Map<Long, PriceQuote> quotes) {
+        return quotes.values().stream().filter(PriceQuote::onSale)
+                .max(Comparator.comparing(PriceQuote::percent)).orElse(null);
     }
 }

@@ -68,6 +68,8 @@ public class SecurityConfig {
             "/api/v1/portfolio/**",
             "/api/v1/search/**",
             "/api/v1/faqs/**",
+            "/api/v1/announcements/**",
+            "/api/v1/promotions/**",
             "/api/v1/seo/**",
             "/api/v1/variants/*/availability",
             "/api/v1/geo/**",

@@ -32,7 +32,8 @@ class CatalogMapperTest {
     void setUp(@TempDir Path tempDir) {
         StorageProperties properties = new StorageProperties();
         properties.setLocalPath(tempDir.toString());
-        mapper = new CatalogMapper(new LocalStorageService(properties));
+        mapper = new CatalogMapper(new LocalStorageService(properties),
+                com.velora.api.marketing.service.PromotionPricingService.noPromotions());
     }
 
     @Test

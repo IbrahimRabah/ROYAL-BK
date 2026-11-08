@@ -353,6 +353,34 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 - الشاشة بتصغّر الصورة في المتصفح (أطول ضلع ٢٠٠٠px، WebP جودة ٨٥ أو JPEG لو المتصفح ما بيكتبش WebP) لو أكبر من ١٫٥ ميجا، وبتبعت ٢ طلب في نفس الوقت. الأصل بيفضل في Drive.
 - **نشر منتج بدون صورة مسموح لكن بيحذّر:** `POST /admin/products/bulk-status` بيرجع كمان `warnings: [{ id, name, code: "NO_IMAGE" }]` للمنتجات اللي اتنشرت وعددها صفر صور (`imageCount` موجود أصلًا في `ProductAdminResponse`، والفلتر «بدون صور» في قايمة المنتجات بيشتغل عليه في المتصفح).
 
+**تقييمات المنتجات (V26):** العميل يقيّم المنتج **مرة واحدة** بعد ما أوردر من أوردراته اللي فيه المنتج يبقى `DELIVERED`. التقييم بيتسجّل `PENDING` ومبيظهرش للعامة غير لما الأدمن يوافق (`APPROVED`). تعديل العميل لتقييمه بيرجّعه `PENDING`. الأدمن بيتحكم من **`/admin/reviews`** (في القايمة الجانبية، وعليها عدّاد بالمنتظر).
+
+| الـendpoint | الاستخدام |
+|---|---|
+| `GET /products/{slug}/reviews?page=&size=` | عام: `{ average?, count, breakdown:{"5":..,"1":..}, reviews: PageResponse<{id,reviewerName,rating,comment?,createdAt}> }`. بيرجع المعتمد بس، والاسم «Ahmed M.» |
+| `GET /me/reviews/eligible` | المنتجات اللي استلمها العميل ولسه مقيّمهاش `[{productId,slug,name,imageUrl?,orderNumber}]` |
+| `GET /me/reviews` · `POST /me/reviews` · `PUT /me/reviews/{id}` | تقييماتي (بكل حالاتها) · `{productId,rating:1-5,comment?}` ⇒ `201` · تعديل `{rating,comment?}` |
+| `GET /admin/reviews?status=&productId=&rating=&q=&page=` · `GET /admin/reviews/counts` | القايمة (الأحدث أول) وعدّادات التابات `{pending,approved,rejected,total}` |
+| `POST /admin/reviews/{id}/approve` · `.../reject` | موافقة / رفض (أو إخفاء لو معتمد)، body اختياري `{note?}` والملاحظة بتظهر للعميل على تقييمه المرفوض |
+| `POST /admin/reviews/bulk` · `DELETE /admin/reviews/{id}` | `{action:"APPROVE"\|"REJECT",ids:[≤500],note?}` ⇒ `{succeeded,skipped:[{id,reason}]}` · حذف نهائي (سبام) |
+
+`ratingAvg` و`ratingCount` اتضافوا في `ProductSummaryResponse` و`ProductDetailResponse` (من التقييمات المعتمدة بس؛ `ratingCount=0` ومفيش `ratingAvg` لو مفيش). الأخطاء: `REVIEW_NOT_ELIGIBLE` 403 · `REVIEW_ALREADY_EXISTS` 409 · `REVIEW_NOT_FOUND` 404 (وبرضه لتقييم عميل تاني) · `REVIEW_ALREADY_DECIDED` 409. القرارات بتتسجّل في سجل التدقيق بإجراء `REVIEW_MODERATED`. الأشكال الكاملة في `VELORA_API_Contract.md` تحت "Product Reviews".
+
+**SEO والأسئلة الشائعة والفريق (V27):** فريق الـSEO بيشتغل من **`/admin/seo`** (نظرة عامة، نصوص الميتا للمنتجات والفئات، نصوص الصفحات الثابتة، الأسئلة الشائعة). صلاحية جديدة **`SEO_EDITOR`** تدخل دول بس: `/admin/seo/**` و`/admin/faqs/**`، وأي endpoint أدمن تاني بيرجّع `403`. المالك بيدّي كل شخص صلاحية على **حسابه هو** من شاشة **`/admin/team`** بدل ما يشارك الباسورد (المشاركة بتخلّي سجل التدقيق يكتب اسم المالك على كل تعديل).
+
+| الـendpoint | الاستخدام |
+|---|---|
+| `GET /products/{slug}/faqs` · `GET /categories/{id}/faqs` · `GET /faqs?topic=` | عام: `[{id,question,answer,topic?}]` المنشور بس، بالترتيب، وبلغة الـ`Accept-Language` (عربي لو الإنجليزي ناقص) |
+| `GET /seo/pages/{key}` | `{title?,description?,noindex}` للصفحات الثابتة (`HOME PRODUCTS ABOUT CONTACT PORTFOLIO CUSTOM_REQUEST FAQ`) |
+| `GET /seo/sitemap.xml` · `GET /seo/robots.txt` | السيرفر بتاع الواجهة بيقدّمهم على `/sitemap.xml` و`/robots.txt` (متغيّر `API_URL`)، والأصل في `SITE_URL` عند الـAPI |
+| `GET /admin/seo/overview` | عدّادات الصحة: `products{total,missingTitle,missingDescription,titleTooLong,descriptionTooLong,duplicateTitle,withoutFaq}` و`categories` و`pages` و`faqs{published,drafts}` |
+| `GET /admin/seo/products` · `PUT /admin/seo/products/{id}` | `?q=&filter=ALL\|MISSING_TITLE\|MISSING_DESCRIPTION\|TOO_LONG\|DUPLICATE\|NO_FAQ&status=&page=` · `{metaTitleAr,metaDescriptionAr,metaTitleEn,metaDescriptionEn}` (فاضي = مسح، ومفيش حاجة تانية في المنتج بتتغيّر) |
+| `GET/PUT /admin/seo/categories[/{id}]` · `GET /admin/seo/pages` · `PUT /admin/seo/pages/{key}` | نفس الفكرة للفئات؛ والصفحات `{titleAr,descriptionAr,titleEn,descriptionEn,noindex}` |
+| `GET/POST /admin/faqs` · `PUT/DELETE /admin/faqs/{id}` · `PUT /admin/faqs/reorder` · `POST /admin/faqs/bulk-status` | `{scope:PRODUCT\|CATEGORY\|GENERAL,targetId?,topic?,questionAr,answerAr,questionEn?,answerEn?,position?,status:DRAFT\|PUBLISHED}`؛ الإنجليزي بيتحفظ لو السؤال والإجابة الاتنين موجودين؛ نص عادي بس |
+| `GET /admin/team` · `GET /admin/team/lookup?email=` · `PUT /admin/team/{userId}/roles` | للأدمن بس: `[{id,email,name,roles}]` · `{roles:["ADMIN"\|"SEO_EDITOR"]}`. ممنوع تغيّر صلاحياتك بنفسك (`TEAM_SELF_CHANGE` 409) ولا تشيل آخر أدمن (`TEAM_LAST_ADMIN` 409). التغيير بيوصل للشخص عند دخوله التالي |
+
+الواجهة بتحط دلوقتي على كل صفحة: title وdescription وcanonical وrobots وOpen Graph وTwitter، وفي صفحة المنتج بيانات Product (سعر ومخزون وتقييم) وBreadcrumb، وFAQPage للأسئلة الظاهرة بس. المناطق الخاصة (`/admin /me /auth /cart /checkout /wishlist`) `noindex`. أكواد جديدة: `FAQ_NOT_FOUND` · `SEO_PAGE_NOT_FOUND` · `TEAM_USER_NOT_FOUND` · `TEAM_LAST_ADMIN` · `TEAM_SELF_CHANGE`. الأشكال الكاملة في `VELORA_API_Contract.md` تحت "SEO, FAQs and the Team".
+
 ## ٣. ⚠️ اللي اتغيّر في سلوك قائم
 
 ### ١) السلة: بقت بترفض أي منتج مش `READY_MADE`
@@ -574,6 +602,10 @@ body الطلب: `type` (`SIZE_VARIANT`\|`MADE_TO_ORDER`\|`CUSTOM_WORK`)، `cont
 - **استيراد الصور — مفيش مسح للملفات اليتيمة.** لو الـprocess وقعت بين كتابة الملف على القرص وإنهاء الـtransaction، بيفضل ملف في `royal-uploads/products` مفيش صف بيشاور عليه. الفشل العادي (استثناء أو rollback) بيمسح الملف، لكن الوقوع المفاجئ لأ. اللازم job بيقارن الملفات بـ`product_image.url`؛ **مش معمول**.
 - **استيراد الصور — الـ٤٨ صورة اللي على القرص قبله** (٩٣ ميجا، كلها بحجمها الأصلي ومن غير thumb) ما اتعالجتش. ومفيش thumbnail في السيرفر: `thumb_url` لسه فاضي.
 - **نسخ `royal-uploads` الاحتياطي مسؤولية صاحب المشروع** (ملفات محلية على قرص واحد، مش بتتبني في container). مكتوب في `src/main/resources/db/README.md`.
+
+- **التقييمات:** مفيش إيميل للعميل عند الموافقة/الرفض، ومفيش صور في التقييم، ومفيش حد معدّل على كتابة التقييم.
+
+- **SEO:** الفهرسة بالعربي بس (العربي والإنجليزي على نفس الرابط، فمفيش hreflang). مفيش تعديل للـslug من شاشات الـSEO ولا جدول redirects. مفيش صور مشاركة (og:image) غير صورة المنتج/الفئة.
 
 ## ٨. حاجات معروفة محتاجة إصلاح
 

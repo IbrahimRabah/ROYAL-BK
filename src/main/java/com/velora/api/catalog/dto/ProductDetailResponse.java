@@ -44,8 +44,14 @@ public record ProductDetailResponse(
         BigDecimal ratingAvg,
         @Schema(description = "How many approved reviews")
         Integer ratingCount,
+        @Schema(description = "The running promotion that lowers a price of this product; absent when none applies")
+        SaleResponse sale,
         SeoResponse seo
 ) {
+
+    @Schema(description = "A running discount: the badge and the countdown")
+    public record SaleResponse(Long promotionId, String name, BigDecimal percent, java.time.OffsetDateTime endsAt) {
+    }
 
     @Schema(description = "Price range across active variants")
     public record PriceRangeResponse(BigDecimal min, BigDecimal max) {

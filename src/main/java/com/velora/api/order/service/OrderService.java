@@ -494,6 +494,8 @@ public class OrderService {
                 item.getAssemblyFee(),
                 item.assemblyTotal(),
                 item.getQuantityReturned(),
-                item.returnableQuantity());
+                item.returnableQuantity(),
+                item.getListPriceGross(),
+                item.getPromotionName());
     }
 }

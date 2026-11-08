@@ -88,6 +88,17 @@ public final class ProductSpecifications {
         return (root, query, cb) -> cb.isTrue(root.get("newArrival"));
     }
 
+    /**
+     * Only products with at least one variant cheaper than its regular price because of a running promotion.
+     * Compares the two SQL formulas, so it needs no join and the page count stays correct.
+     */
+    public static Specification<Product> onSale(Boolean onSale) {
+        if (!Boolean.TRUE.equals(onSale)) {
+            return alwaysTrue();
+        }
+        return (root, query, cb) -> cb.lessThan(root.<BigDecimal>get("effectiveMinPrice"), root.<BigDecimal>get("minPrice"));
+    }
+
     public static Specification<Product> hasFulfillmentType(FulfillmentType fulfillmentType) {
         if (fulfillmentType == null) {
             return alwaysTrue();
@@ -107,13 +118,13 @@ public final class ProductSpecifications {
             if (min != null && max != null) {
                 // A product matches if any of its variants falls in the range.
                 return cb.and(
-                        cb.lessThanOrEqualTo(root.get("minPrice"), max),
-                        cb.greaterThanOrEqualTo(root.get("maxPrice"), min));
+                        cb.lessThanOrEqualTo(root.get("effectiveMinPrice"), max),
+                        cb.greaterThanOrEqualTo(root.get("effectiveMaxPrice"), min));
             }
             if (min != null) {
-                return cb.greaterThanOrEqualTo(root.get("maxPrice"), min);
+                return cb.greaterThanOrEqualTo(root.get("effectiveMaxPrice"), min);
             }
-            return cb.lessThanOrEqualTo(root.get("minPrice"), max);
+            return cb.lessThanOrEqualTo(root.get("effectiveMinPrice"), max);
         };
     }
 

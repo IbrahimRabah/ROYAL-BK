@@ -3,6 +3,8 @@ package com.velora.api.order.service;
 import com.velora.api.cart.domain.Cart;
 import com.velora.api.cart.domain.CartItem;
 import com.velora.api.cart.service.CartService;
+import com.velora.api.marketing.service.PriceQuote;
+import com.velora.api.marketing.service.PromotionPricingService;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductImage;
 import com.velora.api.catalog.domain.ProductTranslation;
@@ -86,6 +88,7 @@ public class CheckoutService {
     private final OrderNumberGenerator orderNumberGenerator;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PromotionPricingService pricing;
 
     public CheckoutService(CartService cartService,
                            ReservationService reservationService,
@@ -99,7 +102,9 @@ public class CheckoutService {
                            OrderStatusHistoryRepository historyRepository,
                            OrderNumberGenerator orderNumberGenerator,
                            StorageService storageService,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           PromotionPricingService pricing) {
+        this.pricing = pricing;
         this.cartService = cartService;
         this.reservationService = reservationService;
         this.shippingService = shippingService;
@@ -281,6 +286,8 @@ public class CheckoutService {
             ProductVariant variant = item.getVariant();
             Product product = variant.getProduct();
             ProductImage image = product.mainImage();
+            // Priced from the database as it is now, never from a cached copy: this is what gets charged.
+            PriceQuote quote = pricing.quoteFresh(variant);
 
             lines.add(new LineSnapshot(
                     variant,
@@ -290,7 +297,10 @@ public class CheckoutService {
                     variant.getSku(),
                     summaryFor(variant, locale),
                     image == null ? null : storageService.urlFor(image.getUrl()),
-                    variant.getPrice(),
+                    quote.price(),
+                    quote.onSale() ? quote.listPrice() : null,
+                    quote.promotionId(),
+                    quote.onSale() ? quote.promotionNameAr() : null,
                     variant.getTaxRate(),
                     variant.getWeightGrams(),
                     product.getShippingSizeClass(),
@@ -386,6 +396,9 @@ public class CheckoutService {
             item.setVariantSummary(line.variantSummary());
             item.setImageUrl(line.imageUrl());
             item.setUnitPriceGross(line.unitPrice());
+            item.setListPriceGross(line.listPrice());
+            item.setPromotionId(line.promotionId());
+            item.setPromotionName(line.promotionName());
             item.setQuantity(line.quantity());
             item.setLineDiscount(MoneyUtils.ZERO);
             item.setAllocatedCartDiscount(allocated);
@@ -513,7 +526,8 @@ public class CheckoutService {
     private record LineSnapshot(
             ProductVariant variant, Product product,
             String nameAr, String nameEn, String sku, String variantSummary,
-            String imageUrl, BigDecimal unitPrice, BigDecimal taxRate,
+            String imageUrl, BigDecimal unitPrice, BigDecimal listPrice, Long promotionId, String promotionName,
+            BigDecimal taxRate,
             int weightGrams, ShippingSizeClass shippingSizeClass,
             BigDecimal assemblyFee, int quantity) {
     }

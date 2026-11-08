@@ -19,6 +19,8 @@ import com.velora.api.catalog.repository.ProductVariantRepository;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.storage.StorageService;
+import com.velora.api.marketing.service.PriceQuote;
+import com.velora.api.marketing.service.PromotionPricingService;
 import com.velora.api.common.util.MoneyUtils;
 import com.velora.api.identity.domain.AppUser;
 import com.velora.api.identity.repository.AppUserRepository;
@@ -54,13 +56,16 @@ public class CartService {
     private final AppUserRepository userRepository;
     private final GuestTokenService guestTokenService;
     private final StorageService storageService;
+    private final PromotionPricingService pricing;
 
     public CartService(CartRepository cartRepository,
                        CartItemRepository cartItemRepository,
                        ProductVariantRepository variantRepository,
                        AppUserRepository userRepository,
                        GuestTokenService guestTokenService,
-                       StorageService storageService) {
+                       StorageService storageService,
+                       PromotionPricingService pricing) {
+        this.pricing = pricing;
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.variantRepository = variantRepository;
@@ -104,7 +109,7 @@ public class CartService {
 
         if (existing != null) {
             existing.setQuantity(requested);
-            existing.setPriceAtAdd(variant.getPrice());
+            existing.setPriceAtAdd(pricing.quoteFresh(variant).price());
         } else {
             if (cart.getItems().size() >= MAX_LINES) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -113,7 +118,7 @@ public class CartService {
             CartItem item = new CartItem();
             item.setVariant(variant);
             item.setQuantity(request.quantity());
-            item.setPriceAtAdd(variant.getPrice());
+            item.setPriceAtAdd(pricing.quoteFresh(variant).price());
             cart.addItem(item);
         }
 
@@ -345,8 +350,9 @@ public class CartService {
                                 .formatted(available, item.getQuantity())));
             }
 
-            if (item.priceChanged()) {
-                boolean cheaper = variant.getPrice().compareTo(item.getPriceAtAdd()) < 0;
+            BigDecimal current = pricing.quote(variant).price();
+            if (item.priceChanged(current)) {
+                boolean cheaper = current.compareTo(item.getPriceAtAdd()) < 0;
                 warnings.add(CartWarning.priceChanged(item.getId(), variant.getSku(),
                         cheaper ? "The price went down since you added this"
                                 : "The price went up since you added this"));
@@ -365,8 +371,9 @@ public class CartService {
             ProductVariant variant = item.getVariant();
             Product product = variant.getProduct();
 
-            // Priced from the CURRENT variant price, never from priceAtAdd.
-            BigDecimal unitPrice = variant.getPrice();
+            // Priced from the CURRENT price (a running promotion included), never from priceAtAdd.
+            PriceQuote quote = pricing.quote(variant);
+            BigDecimal unitPrice = quote.price();
             BigDecimal lineTotal = MoneyUtils.lineTotal(unitPrice, item.getQuantity());
 
             subtotal = subtotal.add(lineTotal);
@@ -393,11 +400,13 @@ public class CartService {
                     image == null ? null : storageService.urlFor(image.getUrl()),
                     unitPrice,
                     item.getPriceAtAdd(),
-                    item.priceChanged(),
+                    item.priceChanged(unitPrice),
                     item.getQuantity(),
                     variant.getAvailable(),
                     variant.isInStock(),
-                    lineTotal));
+                    lineTotal,
+                    quote.onSale() ? quote.listPrice() : null,
+                    quote.onSale() ? quote.discountPercent() : null));
         }
 
         // TODO(promotion module): apply the coupon and allocate it to the lines.

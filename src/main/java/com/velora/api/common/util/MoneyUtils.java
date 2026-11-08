@@ -95,6 +95,17 @@ public final class MoneyUtils {
         return round(amount.multiply(percent).divide(BigDecimal.valueOf(100), SCALE, MODE));
     }
 
+    /**
+     * {@code percent} percent of {@code amount}, rounded ONCE, to the piastre, from the exact value. Rounding to the
+     * storage scale first and to the piastre after would round twice and could differ by a piastre from the same
+     * calculation done in SQL (see {@code dbo.fn_best_discount_percent}).
+     */
+    public static BigDecimal percentOfForDisplay(BigDecimal amount, BigDecimal percent) {
+        requireNonNegative(amount, "amount");
+        requireNonNegative(percent, "percent");
+        return amount.multiply(percent).divide(BigDecimal.valueOf(100), DISPLAY_SCALE, MODE);
+    }
+
     // ------------------------------------------------------------ allocation
 
     /**
