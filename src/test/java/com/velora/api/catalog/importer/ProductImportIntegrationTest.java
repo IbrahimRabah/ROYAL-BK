@@ -268,6 +268,111 @@ class ProductImportIntegrationTest {
     }
 
     @Test
+    @DisplayName("A priced row is ready-made and sized from its name; stock defaults to 50 with an alert at 10")
+    void pricedRowsAreReadyToShip() throws Exception {
+        byte[] sheet = ImportWorkbooks.empty(wb -> {
+            // Nothing said about how it is sold, size or stock: worked out.
+            ImportWorkbooks.put(wb, 1, row("sku", "IMP" + tag + "A", "category", categoryName,
+                    "name_ar", "كرسي سفرة حديد 40×40×70سم", "price", "1700"));
+            // Everything said: used as it is.
+            ImportWorkbooks.put(wb, 2, row("sku", "IMP" + tag + "B", "category", categoryName,
+                    "name_ar", "ترابيزة حديد 120×80×75سم", "price", "5000", "stock", "4",
+                    "fulfillment_type", "جاهز للشحن", "shipping_size", "كبير"));
+            // Priced, but no dimensions anywhere: not guessed, kept for review.
+            ImportWorkbooks.put(wb, 3, row("sku", "IMP" + tag + "C", "category", categoryName,
+                    "name_ar", "بوابة حديد", "price", "9000"));
+            // Asked to be made to order: stays so, whatever the price.
+            ImportWorkbooks.put(wb, 4, row("sku", "IMP" + tag + "D", "category", categoryName,
+                    "name_ar", "كرسي 40×40×70سم", "price", "900", "fulfillment_type", "حسب الطلب"));
+        });
+
+        String upload = mvc.perform(multipart(URL).file(file(sheet)).with(admin()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.errorRows").value(0))
+                .andExpect(jsonPath("$.warningRows").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.canSubmit").value(true))
+                .andReturn().getResponse().getContentAsString();
+        long batchId = trackBatch(upload);
+
+        mvc.perform(get(URL + "/" + batchId + "/rows").with(admin()))
+                .andExpect(jsonPath("$.content[0].data.fulfillmentType").value("READY_MADE"))
+                .andExpect(jsonPath("$.content[0].data.shippingSizeClass").value("SMALL"))
+                .andExpect(jsonPath("$.content[1].data.shippingSizeClass").value("LARGE"))
+                .andExpect(jsonPath("$.content[2].data.fulfillmentType").value("MADE_TO_ORDER"))
+                .andExpect(jsonPath("$.content[2].messages[?(@.code == 'SHIPPING_SIZE_UNKNOWN')]").isNotEmpty())
+                .andExpect(jsonPath("$.content[3].data.fulfillmentType").value("MADE_TO_ORDER"))
+                .andExpect(jsonPath("$.content[3].messages[?(@.code == 'SHIPPING_SIZE_UNKNOWN')]").isEmpty());
+
+        mvc.perform(post(URL + "/" + batchId + "/commit").with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created").value(4));
+
+        assertThat(sold("A")).containsEntry("fulfillment_type", "READY_MADE").containsEntry("shipping_size_class", "SMALL");
+        assertThat(sold("B")).containsEntry("fulfillment_type", "READY_MADE").containsEntry("shipping_size_class", "LARGE");
+        assertThat(sold("C")).containsEntry("fulfillment_type", "MADE_TO_ORDER");
+        assertThat(sold("D")).containsEntry("fulfillment_type", "MADE_TO_ORDER");
+
+        // No stock in the sheet: 50, with the alert at 10, and the opening stock written as a movement.
+        assertThat(stockOf("A")).containsEntry("qty_on_hand", 50).containsEntry("min_stock_level", 10);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_movement m JOIN product_variant v "
+                + "ON v.id = m.variant_id WHERE v.sku = ? AND m.quantity_delta = 50", Integer.class,
+                "IMP" + tag + "A")).isEqualTo(1);
+        // A stock the sheet does give is never replaced by the default.
+        assertThat(stockOf("B")).containsEntry("qty_on_hand", 4).containsEntry("min_stock_level", 10);
+    }
+
+    @Test
+    @DisplayName("A row kept for want of a size becomes ready-made once its size is set in the preview")
+    void sizingARowInThePreview() throws Exception {
+        String upload = mvc.perform(multipart(URL).file(file(ImportWorkbooks.empty(wb ->
+                        ImportWorkbooks.put(wb, 1, row("sku", "IMP" + tag + "A", "category", categoryName,
+                                "name_ar", "بوابة حديد", "price", "9000"))))).with(admin()))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long batchId = trackBatch(upload);
+
+        mvc.perform(get(URL + "/" + batchId + "/rows").with(admin()))
+                .andExpect(jsonPath("$.content[0].data.fulfillmentType").value("MADE_TO_ORDER"))
+                .andExpect(jsonPath("$.content[0].messages[?(@.code == 'SHIPPING_SIZE_UNKNOWN')]").isNotEmpty());
+
+        mvc.perform(put(URL + "/" + batchId + "/rows/2").with(admin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"values\": {\"shipping_size\": \"متوسط\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.row.status").value("VALID"))
+                .andExpect(jsonPath("$.row.data.fulfillmentType").value("READY_MADE"))
+                .andExpect(jsonPath("$.row.data.shippingSizeClass").value("MEDIUM"))
+                .andExpect(jsonPath("$.row.messages[?(@.code == 'SHIPPING_SIZE_UNKNOWN')]").isEmpty());
+
+        mvc.perform(post(URL + "/" + batchId + "/commit").with(admin())).andExpect(status().isOk());
+        assertThat(sold("A")).containsEntry("fulfillment_type", "READY_MADE")
+                .containsEntry("shipping_size_class", "MEDIUM");
+    }
+
+    @Test
+    @DisplayName("A value that is neither a way of selling nor a size is a finding on its row, not a crash")
+    void unknownFulfillmentOrSizeIsReported() throws Exception {
+        String upload = mvc.perform(multipart(URL).file(file(ImportWorkbooks.empty(wb ->
+                        ImportWorkbooks.put(wb, 1, row("sku", "IMP" + tag + "A", "category", categoryName,
+                                "name_ar", "كرسي", "price", "100",
+                                "fulfillment_type", "ربما", "shipping_size", "ضخم"))))).with(admin()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.errorRows").value(1))
+                .andReturn().getResponse().getContentAsString();
+        trackBatch(upload);
+    }
+
+    private Map<String, Object> sold(String suffix) {
+        return jdbc.queryForMap("SELECT p.fulfillment_type, p.shipping_size_class FROM product p "
+                + "JOIN product_variant v ON v.product_id = p.id WHERE v.sku = ?", "IMP" + tag + suffix);
+    }
+
+    private Map<String, Object> stockOf(String suffix) {
+        return jdbc.queryForMap("SELECT i.qty_on_hand, i.min_stock_level FROM inventory i "
+                + "JOIN product_variant v ON v.id = i.variant_id WHERE v.sku = ?", "IMP" + tag + suffix);
+    }
+
+    @Test
     @DisplayName("One bad row blocks the submit of the whole sheet, and the good rows are not saved either")
     void oneErrorBlocksEverything() throws Exception {
         byte[] sheet = ImportWorkbooks.empty(wb -> {

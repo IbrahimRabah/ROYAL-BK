@@ -109,14 +109,80 @@ class ImportSheetReaderTest {
     }
 
     @Test
-    @DisplayName("An added column is refused")
+    @DisplayName("An added column, after the optional ones, is refused")
     void addedColumn() {
+        int past = ImportTemplate.headers(ImportTemplate.Sheet.MAIN).length
+                + ImportTemplate.optionalHeaders(ImportTemplate.Sheet.MAIN).length;
         BusinessException e = rejected(ImportWorkbooks.empty(wb ->
-                main(wb).getRow(0).createCell(ImportTemplate.headers(ImportTemplate.Sheet.MAIN).length)
-                        .setCellValue("عمود جديد")));
+                main(wb).getRow(0).createCell(past).setCellValue("عمود جديد")));
 
         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.IMPORT_TEMPLATE_MISMATCH);
         assertThat(e.getMessage()).contains("is not part of the template");
+    }
+
+    private static final int FULFILLMENT_COL = 44;
+    private static final int SIZE_COL = 45;
+
+    @Test
+    @DisplayName("The optional columns are read when the workbook has them")
+    void optionalColumnsAreRead() {
+        List<RawRow> rows = reader.read(ImportWorkbooks.empty(wb ->
+                ImportWorkbooks.put(wb, 1, ImportWorkbooks.row("sku", "A1", "category", "كراسي",
+                        "fulfillment_type", "جاهز للشحن", "shipping_size", "كبير"))));
+
+        assertThat(rows.get(0).get("fulfillment_type")).isEqualTo("جاهز للشحن");
+        assertThat(rows.get(0).get("shipping_size")).isEqualTo("كبير");
+    }
+
+    @Test
+    @DisplayName("A workbook WITHOUT the optional columns is still accepted, and reads them as empty")
+    void optionalColumnsMayBeAbsent() {
+        List<RawRow> rows = reader.read(ImportWorkbooks.empty(wb -> {
+            main(wb).getRow(0).removeCell(main(wb).getRow(0).getCell(SIZE_COL));
+            main(wb).getRow(0).removeCell(main(wb).getRow(0).getCell(FULFILLMENT_COL));
+            ImportWorkbooks.put(wb, 1, ImportWorkbooks.row("sku", "A1", "category", "كراسي", "price", "100"));
+        }));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("fulfillment_type")).isEmpty();
+        assertThat(rows.get(0).get("shipping_size")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Only the first optional column present is accepted too")
+    void firstOptionalColumnAlone() {
+        List<RawRow> rows = reader.read(ImportWorkbooks.empty(wb -> {
+            main(wb).getRow(0).removeCell(main(wb).getRow(0).getCell(SIZE_COL));
+            ImportWorkbooks.put(wb, 1, ImportWorkbooks.row("sku", "A1", "category", "كراسي",
+                    "fulfillment_type", "حسب الطلب"));
+        }));
+
+        assertThat(rows.get(0).get("fulfillment_type")).isEqualTo("حسب الطلب");
+        assertThat(rows.get(0).get("shipping_size")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Cells under an optional column whose header is missing are not read")
+    void strayCellsUnderAbsentHeaderAreIgnored() {
+        List<RawRow> rows = reader.read(ImportWorkbooks.empty(wb -> {
+            ImportWorkbooks.put(wb, 1, ImportWorkbooks.row("sku", "A1", "category", "كراسي",
+                    "fulfillment_type", "عمل خاص", "shipping_size", "كبير"));
+            main(wb).getRow(0).removeCell(main(wb).getRow(0).getCell(SIZE_COL));
+            main(wb).getRow(0).removeCell(main(wb).getRow(0).getCell(FULFILLMENT_COL));
+        }));
+
+        assertThat(rows.get(0).get("fulfillment_type")).isEmpty();
+        assertThat(rows.get(0).get("shipping_size")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("An optional column with the wrong header is refused, not silently read")
+    void optionalColumnWithWrongHeader() {
+        BusinessException e = rejected(ImportWorkbooks.empty(wb ->
+                main(wb).getRow(0).getCell(FULFILLMENT_COL).setCellValue("طريقة البيع")));
+
+        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.IMPORT_TEMPLATE_MISMATCH);
+        assertThat(e.getMessage()).contains("طريقة البيع");
     }
 
     @Test

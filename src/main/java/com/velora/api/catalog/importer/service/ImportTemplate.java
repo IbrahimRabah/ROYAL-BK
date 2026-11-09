@@ -16,10 +16,14 @@ import java.util.stream.Collectors;
  * two against each other.
  *
  * <p>Bump {@link #VERSION} when a column is added, removed, renamed or moved.
+ *
+ * <p>Version 3 added two OPTIONAL columns at the end of the main sheet ({@link #OPTIONAL_MAIN_HEADERS}: how the
+ * product is sold, and its shipping size). A workbook without them is still accepted, exactly as before, and an
+ * empty cell in them means "work it out" (see {@link ImportFulfillmentRules}). They are never required.
  */
 public final class ImportTemplate {
 
-    public static final String VERSION = "2";
+    public static final String VERSION = "3";
 
     public static final String SHEET_MAIN = "كرسي البار";
     public static final String SHEET_SEO = "SEO";
@@ -36,7 +40,8 @@ public final class ImportTemplate {
     public enum Sheet { MAIN, SEO }
 
     public enum Kind {
-        SKU, CATEGORY, TEXT, LONG_TEXT, SLUG, MONEY, INTEGER, SPEC_TEXT, SPEC_NUMBER, SPEC_BOOLEAN
+        SKU, CATEGORY, TEXT, LONG_TEXT, SLUG, MONEY, INTEGER, SPEC_TEXT, SPEC_NUMBER, SPEC_BOOLEAN,
+        FULFILLMENT, SHIPPING_SIZE
     }
 
     static final String[] MAIN_HEADERS = {
@@ -86,6 +91,15 @@ public final class ImportTemplate {
             "SEO Description (English)"
     };
 
+    /**
+     * Columns after the last main-sheet header that a workbook MAY carry, in this order and only as a prefix
+     * (the first alone, or both). A workbook without them is valid.
+     */
+    static final String[] OPTIONAL_MAIN_HEADERS = {
+            "نوع البيع",
+            "حجم الشحن"
+    };
+
     static final String[] SEO_HEADERS = {
             "SKU",
             "القسم",
@@ -127,7 +141,8 @@ public final class ImportTemplate {
 
         /** The header text exactly as the sheet carries it. */
         public String header() {
-            return headers(sheet)[index];
+            String[] core = headers(sheet);
+            return index < core.length ? core[index] : optionalHeaders(sheet)[index - core.length];
         }
 
         /** The header and its column letter: several headers repeat, so the text alone is ambiguous. */
@@ -180,6 +195,8 @@ public final class ImportTemplate {
             main("price_ag", 32, Kind.MONEY, false),
             main("compare_at", 31, Kind.MONEY, false),
             main("stock", 33, Kind.INTEGER, false),
+            main("fulfillment_type", 44, Kind.FULFILLMENT, false),
+            main("shipping_size", 45, Kind.SHIPPING_SIZE, false),
 
             spec("PIECES_COUNT", 3, Kind.SPEC_NUMBER),
             spec("MATERIAL", 4, Kind.SPEC_TEXT),
@@ -224,6 +241,11 @@ public final class ImportTemplate {
 
     public static String[] headers(Sheet sheet) {
         return sheet == Sheet.MAIN ? MAIN_HEADERS : SEO_HEADERS;
+    }
+
+    /** The optional headers of a sheet: only the main sheet has any. */
+    public static String[] optionalHeaders(Sheet sheet) {
+        return sheet == Sheet.MAIN ? OPTIONAL_MAIN_HEADERS : new String[0];
     }
 
     public static String sheetName(Sheet sheet) {

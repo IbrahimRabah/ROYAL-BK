@@ -196,6 +196,13 @@ public class ProductImportService {
 
         ImportRowData current = fromJson(target.getData(), ImportRowData.class);
         Map<String, String> values = ImportRowValues.of(current);
+        // "Kept as made-to-order because no size was found" was the system's call, not the sheet's: let the
+        // row be worked out again, so giving it a size (or fixing its dimensions) makes it ready-made.
+        boolean keptForWantOfSize = target.getMessages() != null && fromJson(target.getMessages(), MESSAGES)
+                .stream().anyMatch(m -> "SHIPPING_SIZE_UNKNOWN".equals(m.code()));
+        if (keptForWantOfSize) {
+            values.put("fulfillment_type", "");
+        }
         for (Map.Entry<String, String> change : request.values().entrySet()) {
             if (!ImportRowValues.isEditable(change.getKey())) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -384,7 +391,11 @@ public class ProductImportService {
 
         variantService.saveVariants(product.id(), new VariantSaveRequest(List.of(new VariantItem(
                 null, d.sku(), null, d.price(), d.compareAtPrice(), null, null,
-                d.weightGrams(), List.of(), d.stock(), null))), actorId);
+                d.weightGrams(), List.of(),
+                // A sheet with no stock figure must not publish products that read "out of stock": the
+                // opening stock is a default (and a movement is written for it, as for any opening stock).
+                d.stock() == null ? ImportRowProcessor.DEFAULT_STOCK : d.stock(),
+                ImportRowProcessor.MIN_STOCK_LEVEL))), actorId);
         return product.id();
     }
 

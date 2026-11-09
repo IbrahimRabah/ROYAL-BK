@@ -9,8 +9,11 @@ public record ImportRowEditRequest(
         @Schema(description = """
                 The values to replace, by field key (the `values` of the row, and the `field` of its
                 findings): sku, category, name_ar, name_en, short_ar, desc_ar, desc_en, meta_title_ar,
-                meta_title_en, meta_desc_ar, meta_desc_en, slug, price, compare_at, stock, and
+                meta_title_en, meta_desc_ar, meta_desc_en, slug, price, compare_at, stock,
+                fulfillment_type (جاهز للشحن / حسب الطلب / عمل خاص, or READY_MADE / MADE_TO_ORDER / CUSTOM_WORK),
+                shipping_size (صغير / متوسط / كبير, or SMALL / MEDIUM / LARGE), and
                 spec_<attribute code in lowercase> for each specification, e.g. spec_width_cm.
+                Empty fulfillment_type or shipping_size means: work it out from the price and the dimensions.
                 Keys not sent keep their value. Send an empty text to clear a value. Everything is text,
                 so a mistyped number comes back as a finding instead of a rejected request.
                 """, example = "{\"price\": \"2650\", \"category\": \"كراسي البار\"}")

@@ -24,7 +24,10 @@ class ImportTemplateTest {
     void resourceMatchesDefinition() throws IOException {
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(ImportWorkbooks.template()))) {
             for (Sheet sheet : Sheet.values()) {
-                String[] expected = ImportTemplate.headers(sheet);
+                // The downloadable template carries the optional columns too, after the required ones.
+                String[] expected = java.util.stream.Stream.concat(
+                        java.util.Arrays.stream(ImportTemplate.headers(sheet)),
+                        java.util.Arrays.stream(ImportTemplate.optionalHeaders(sheet))).toArray(String[]::new);
                 Row header = wb.getSheet(ImportTemplate.sheetName(sheet)).getRow(0);
 
                 assertThat((int) header.getLastCellNum()).as(sheet + " header width").isEqualTo(expected.length);
@@ -54,7 +57,19 @@ class ImportTemplateTest {
         Set<String> keys = new HashSet<>();
         ImportTemplate.COLUMNS.forEach(c -> {
             assertThat(keys.add(c.key())).as("duplicate key " + c.key()).isTrue();
-            assertThat(c.index()).as(c.key()).isLessThan(ImportTemplate.headers(c.sheet()).length);
+            assertThat(c.index()).as(c.key()).isLessThan(
+                    ImportTemplate.headers(c.sheet()).length + ImportTemplate.optionalHeaders(c.sheet()).length);
         });
+    }
+
+    @Test
+    @DisplayName("The two new columns are optional: never required, and placed after every required column")
+    void newColumnsAreOptional() {
+        for (String key : new String[] {"fulfillment_type", "shipping_size"}) {
+            ImportTemplate.Column column = ImportTemplate.column(key);
+            assertThat(column.required()).as(key + " required").isFalse();
+            assertThat(column.index()).as(key + " index")
+                    .isGreaterThanOrEqualTo(ImportTemplate.headers(Sheet.MAIN).length);
+        }
     }
 }

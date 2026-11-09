@@ -9,6 +9,7 @@ import com.velora.api.catalog.domain.FulfillmentType;
 import com.velora.api.catalog.domain.Product;
 import com.velora.api.catalog.domain.ProductStatus;
 import com.velora.api.catalog.domain.ProductVariant;
+import com.velora.api.catalog.domain.ShippingSizeClass;
 import com.velora.api.catalog.importer.domain.ImportRowAction;
 import com.velora.api.catalog.importer.dto.ImportMessage;
 import com.velora.api.catalog.importer.dto.ImportRowData;
@@ -65,6 +66,23 @@ public class ImportRowProcessor {
             "meta_title_ar", 255, "meta_title_en", 255,
             "meta_desc_ar", 500, "meta_desc_en", 500,
             "slug", 180);
+
+    /** Arabic labels (normalised the way ArabicNormalizer does) for the optional "how it is sold" column. */
+    private static final Map<String, FulfillmentType> FULFILLMENT_LABELS = Map.of(
+            "جاهز للشحن", FulfillmentType.READY_MADE,
+            "جاهز", FulfillmentType.READY_MADE,
+            "حسب الطلب", FulfillmentType.MADE_TO_ORDER,
+            "تصنيع حسب الطلب", FulfillmentType.MADE_TO_ORDER,
+            "عمل خاص", FulfillmentType.CUSTOM_WORK);
+
+    private static final Map<String, ShippingSizeClass> SIZE_LABELS = Map.of(
+            "صغير", ShippingSizeClass.SMALL,
+            "متوسط", ShippingSizeClass.MEDIUM,
+            "كبير", ShippingSizeClass.LARGE);
+
+    /** A product made by the importer with no stock in its row: opening stock, and the low-stock alert level. */
+    public static final int DEFAULT_STOCK = 50;
+    public static final int MIN_STOCK_LEVEL = 10;
 
     private static final int MAX_LONG_TEXT = 20_000;
     private static final int MAX_SPEC_TEXT = 500;
@@ -234,11 +252,15 @@ public class ImportRowProcessor {
             }
         }
 
+        FulfillmentType fulfillmentType = cells.fulfillmentType("fulfillment_type");
+        ShippingSizeClass shippingSize = cells.shippingSize("shipping_size");
+
         ImportRowData data = new ImportRowData(
                 sku, cells.text("category"), null,
                 cells.text("name_ar"), nameEn, cells.text("short_ar"), null, descAr, descEn,
                 cells.text("meta_title_ar"), metaTitleEn, cells.text("meta_desc_ar"), metaDescEn,
-                slug, price, compareAt, cells.integer("stock"), null, null, null, null, null, specs, raw.seoRowNo());
+                slug, price, compareAt, cells.integer("stock"), fulfillmentType, shippingSize, null, null, null,
+                specs, raw.seoRowNo());
         return new Parsed(data, msgs);
     }
 
@@ -273,8 +295,15 @@ public class ImportRowProcessor {
 
         // A SKU is unique across the whole shop, archived products included (a SKU is never reused). A row
         // whose SKU is already taken is an error that names who has it; an import only ever creates products.
-        FulfillmentType fulfillment = data.fulfillmentType() == null
-                ? FulfillmentType.MADE_TO_ORDER : data.fulfillmentType();
+        // How it is sold and its shipping size: what the sheet says, else worked out (ImportFulfillmentRules).
+        ImportFulfillmentRules.Decision decision = ImportFulfillmentRules.decide(
+                data.fulfillmentType(), data.shippingSizeClass(), data.price() != null, data.nameAr(), data.specs());
+        FulfillmentType fulfillment = decision.type();
+        if (decision.sizeUnknown()) {
+            msgs.add(ImportMessage.warning("shipping_size", "SHIPPING_SIZE_UNKNOWN",
+                    "No shipping size is given and none could be read from the dimensions, so this product is "
+                            + "kept as made-to-order. Set its shipping size to sell it from the cart"));
+        }
 
         if (data.sku() != null) {
             Optional<ProductVariant> existing = variantRepository.findBySku(data.sku());
@@ -292,12 +321,14 @@ public class ImportRowProcessor {
             }
         }
 
-        if (fulfillment == FulfillmentType.READY_MADE && data.shippingSizeClass() == null) {
-            msgs.add(ImportMessage.error("sku", "SIZE_REQUIRED",
-                    "A ready-to-ship product needs a shipping size"));
+        if (fulfillment == FulfillmentType.READY_MADE && decision.size() == null) {
+            msgs.add(ImportMessage.error("shipping_size", "SIZE_REQUIRED",
+                    "A ready-to-ship product needs a shipping size, and none was given or could be read from "
+                            + "the dimensions"));
         }
 
-        return new Resolved(data.withResolved(categoryId, fulfillment), ImportRowAction.CREATE, null, null, msgs);
+        return new Resolved(data.withResolved(categoryId, fulfillment, decision.size()),
+                ImportRowAction.CREATE, null, null, msgs);
     }
 
     // ================================================================== labels
@@ -403,6 +434,46 @@ public class ImportRowProcessor {
                 problem(key, "TOO_LARGE", "The number is too large");
                 return null;
             }
+        }
+
+        /** How the product is sold: the Arabic label or the code. Empty means "work it out". */
+        FulfillmentType fulfillmentType(String key) {
+            String v = raw(key);
+            if (v == null) {
+                return null;
+            }
+            String n = ArabicNormalizer.normalize(v);
+            String code = v.trim().toUpperCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
+            if (n != null && FULFILLMENT_LABELS.containsKey(n)) {
+                return FULFILLMENT_LABELS.get(n);
+            }
+            for (FulfillmentType type : FulfillmentType.values()) {
+                if (type.name().equals(code)) {
+                    return type;
+                }
+            }
+            problem(key, "INVALID_VALUE", "«" + v + "» is not a way of selling: use «جاهز للشحن», «حسب الطلب» "
+                    + "or «عمل خاص»");
+            return null;
+        }
+
+        /** The shipping size: the Arabic label or the code. Empty means "read it from the dimensions". */
+        ShippingSizeClass shippingSize(String key) {
+            String v = raw(key);
+            if (v == null) {
+                return null;
+            }
+            String n = ArabicNormalizer.normalize(v);
+            if (n != null && SIZE_LABELS.containsKey(n)) {
+                return SIZE_LABELS.get(n);
+            }
+            for (ShippingSizeClass size : ShippingSizeClass.values()) {
+                if (size.name().equalsIgnoreCase(v.trim())) {
+                    return size;
+                }
+            }
+            problem(key, "INVALID_VALUE", "«" + v + "» is not a shipping size: use «صغير», «متوسط» or «كبير»");
+            return null;
         }
 
         /** A specification cell, as the text that is stored. */

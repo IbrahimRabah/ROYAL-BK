@@ -43,9 +43,10 @@ public record ImportRowData(
         Integer seoRowNo
 ) {
 
-    public ImportRowData withResolved(Long id, FulfillmentType fulfillment) {
+    /** The category matched, and how the product is sold with its shipping size, once worked out. */
+    public ImportRowData withResolved(Long id, FulfillmentType fulfillment, ShippingSizeClass size) {
         return new ImportRowData(sku, categoryName, id, nameAr, nameEn, shortAr, shortEn, descAr, descEn,
                 metaTitleAr, metaTitleEn, metaDescAr, metaDescEn, slug, price, compareAtPrice, stock,
-                fulfillment, shippingSizeClass, requiresAssembly, assemblyFee, weightGrams, specs, seoRowNo);
+                fulfillment, size, requiresAssembly, assemblyFee, weightGrams, specs, seoRowNo);
     }
 }

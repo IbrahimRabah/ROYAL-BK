@@ -21,7 +21,7 @@ final class ImportRowValues {
     private static final Set<String> CORE = Set.of(
             "sku", "category", "name_ar", "name_en", "short_ar", "desc_ar", "desc_en",
             "meta_title_ar", "meta_title_en", "meta_desc_ar", "meta_desc_en",
-            "slug", "price", "compare_at", "stock");
+            "slug", "price", "compare_at", "stock", "fulfillment_type", "shipping_size");
 
     private ImportRowValues() {
     }
@@ -52,6 +52,8 @@ final class ImportRowValues {
         v.put("price", d.price() == null ? "" : d.price().stripTrailingZeros().toPlainString());
         v.put("compare_at", d.compareAtPrice() == null ? "" : d.compareAtPrice().stripTrailingZeros().toPlainString());
         v.put("stock", d.stock() == null ? "" : String.valueOf(d.stock()));
+        v.put("fulfillment_type", d.fulfillmentType() == null ? "" : d.fulfillmentType().name());
+        v.put("shipping_size", d.shippingSizeClass() == null ? "" : d.shippingSizeClass().name());
         for (Column column : ImportTemplate.COLUMNS) {
             if (column.isSpec()) {
                 v.put(column.key(), text(d.specs().get(column.attributeCode())));

@@ -83,9 +83,9 @@ public class ImportSheetReader {
                 throw mismatch("The sheet «" + (main == null ? ImportTemplate.SHEET_MAIN : ImportTemplate.SHEET_SEO)
                         + "» is missing");
             }
-            checkHeader(main, Sheet.MAIN);
+            int mainWidth = checkHeader(main, Sheet.MAIN);
             checkHeader(seo, Sheet.SEO);
-            return readRows(main, seo);
+            return readRows(main, seo, mainWidth);
         } catch (IOException | RuntimeException e) {
             if (e instanceof BusinessException be) {
                 throw be;
@@ -97,12 +97,27 @@ public class ImportSheetReader {
 
     // ----------------------------------------------------------------------- header
 
-    private void checkHeader(org.apache.poi.ss.usermodel.Sheet sheet, Sheet which) {
-        String[] expected = ImportTemplate.headers(which);
+    /**
+     * Checks the header row and returns how many columns the sheet carries: the template's own, plus those of
+     * its optional columns that the sheet has (a workbook without them is valid).
+     */
+    private int checkHeader(org.apache.poi.ss.usermodel.Sheet sheet, Sheet which) {
+        String[] core = ImportTemplate.headers(which);
+        String[] optional = ImportTemplate.optionalHeaders(which);
         Row header = sheet.getRow(0);
         List<String> problems = new ArrayList<>();
 
         int found = header == null ? 0 : Math.max(header.getLastCellNum(), 0);
+
+        // An optional column is accepted only as a prefix: how many of them the sheet carries.
+        int optionalPresent = 0;
+        while (optionalPresent < optional.length && core.length + optionalPresent < found
+                && !text(header.getCell(core.length + optionalPresent)).isEmpty()) {
+            optionalPresent++;
+        }
+        String[] expected = new String[core.length + optionalPresent];
+        System.arraycopy(core, 0, expected, 0, core.length);
+        System.arraycopy(optional, 0, expected, core.length, optionalPresent);
         int width = Math.max(expected.length, found);
 
         for (int i = 0; i < width; i++) {
@@ -128,11 +143,13 @@ public class ImportSheetReader {
             throw mismatch("In the sheet «" + ImportTemplate.sheetName(which) + "» the header row differs from the "
                     + "template: " + shown + more);
         }
+        return expected.length;
     }
 
     // ------------------------------------------------------------------------- rows
 
-    private List<RawRow> readRows(org.apache.poi.ss.usermodel.Sheet main, org.apache.poi.ss.usermodel.Sheet seo) {
+    private List<RawRow> readRows(org.apache.poi.ss.usermodel.Sheet main, org.apache.poi.ss.usermodel.Sheet seo,
+                                  int mainWidth) {
         Map<String, Row> seoBySku = new HashMap<>();
         for (int r = 1; r <= seo.getLastRowNum(); r++) {
             Row row = seo.getRow(r);
@@ -144,7 +161,6 @@ public class ImportSheetReader {
 
         List<Column> mainColumns = ImportTemplate.columns(Sheet.MAIN);
         List<Column> seoColumns = ImportTemplate.columns(Sheet.SEO);
-        int mainWidth = ImportTemplate.headers(Sheet.MAIN).length;
         List<RawRow> rows = new ArrayList<>();
 
         for (int r = 1; r <= main.getLastRowNum(); r++) {
@@ -154,7 +170,8 @@ public class ImportSheetReader {
             }
             Map<String, String> values = new LinkedHashMap<>();
             for (Column c : mainColumns) {
-                values.put(c.key(), text(row.getCell(c.index())));
+                // An optional column the workbook does not carry is read as empty, never from stray cells.
+                values.put(c.key(), c.index() < mainWidth ? text(row.getCell(c.index())) : "");
             }
 
             String sku = values.get("sku").toUpperCase(Locale.ROOT);
