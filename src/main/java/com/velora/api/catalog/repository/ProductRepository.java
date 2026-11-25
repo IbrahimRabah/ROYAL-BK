@@ -65,6 +65,28 @@ public interface ProductRepository
     /** Every row counts, archived or not: uq_prod_slug covers them all. */
     boolean existsBySlugAndIdNot(String slug, Long id);
 
+    /**
+     * Best-seller ranking in ONE aggregate query: [productId, unitsSold], best first.
+     *
+     * <p>Units = sum of (quantity - quantityReturned) over order lines whose order is NOT in
+     * {@code excludedStatuses}; visible (ACTIVE, non-archived) products only; a product with no
+     * net units is absent. Ties: newest product first, then highest id.
+     */
+    @Query("""
+            select oi.product.id, sum(oi.quantity - oi.quantityReturned)
+            from OrderItem oi
+            join oi.order o
+            join oi.product p
+            where o.fulfillmentStatus not in :excludedStatuses
+              and p.status = com.velora.api.catalog.domain.ProductStatus.ACTIVE
+              and p.archivedAt is null
+            group by oi.product.id, p.createdAt
+            having sum(oi.quantity - oi.quantityReturned) > 0
+            order by sum(oi.quantity - oi.quantityReturned) desc, p.createdAt desc, oi.product.id desc
+            """)
+    java.util.List<Object[]> rankBestSellers(
+            @Param("excludedStatuses") java.util.Collection<com.velora.api.order.domain.FulfillmentStatus> excludedStatuses);
+
     /** "You may also like" — same category, excluding the product being viewed. */
     @Query("""
             select p from Product p

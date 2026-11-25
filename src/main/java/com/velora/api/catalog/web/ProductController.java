@@ -81,6 +81,23 @@ public class ProductController {
         return productQueryService.findFeatured(pageable, LocaleResolver.resolve(request));
     }
 
+    @Operation(summary = "Best sellers",
+            description = """
+                    Ranked by net units sold (quantity minus returned units) on orders that are not
+                    CANCELLED, RETURNED, RETURNED_TO_SELLER or REFUSED_ON_DELIVERY. ACTIVE,
+                    non-archived products only; ties go to the newest product. If fewer products than
+                    the page size have sales, the page is filled with the remaining products
+                    (featured first, then newest) so the strip is never empty.
+                    """,
+            security = {})
+    @GetMapping("/best-sellers")
+    public PageResponse<ProductSummaryResponse> getBestSellers(
+            @ParameterObject @PageableDefault(size = 12) Pageable pageable,
+            HttpServletRequest request) {
+
+        return productQueryService.findBestSellers(pageable, LocaleResolver.resolve(request));
+    }
+
     @Operation(summary = "New arrivals", security = {})
     @GetMapping("/new-arrivals")
     public PageResponse<ProductSummaryResponse> getNewArrivals(

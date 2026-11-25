@@ -10,6 +10,8 @@ import com.velora.api.common.exception.ErrorCode;
 import com.velora.api.common.util.MoneyUtils;
 import com.velora.api.shipping.domain.Governorate;
 import com.velora.api.shipping.domain.ShippingRate;
+import com.velora.api.catalog.domain.ShippingSizeClass;
+import com.velora.api.shipping.dto.DeliveryOptionResponse;
 import com.velora.api.shipping.dto.GovernorateResponse;
 import com.velora.api.shipping.dto.ShippingQuoteResponse;
 import com.velora.api.shipping.dto.SizeRateResponse;
@@ -17,7 +19,9 @@ import com.velora.api.shipping.repository.GovernorateRepository;
 import com.velora.api.shipping.repository.ShippingRateRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -90,6 +94,62 @@ public class ShippingService {
                     (int) rates.deliveryDaysMin(),
                     (int) rates.deliveryDaysMax(),
                     true));
+        }
+        return result;
+    }
+
+    /**
+     * Delivery cost and estimate per SERVED governorate, with no cart — for the product page.
+     * Closed governorates (no zone, or a zone without rates) are omitted; the address form's
+     * {@link #listGovernorates} is the list that keeps them as {@code served: false}.
+     *
+     * <p>The cost is the zone's per-unit fee for {@code sizeClass} (or the cheapest size when it is
+     * null), capped at the zone's maximum. It does NOT include the COD fee, assembly, or the
+     * quantity multiplier; weight and the old free-shipping threshold are not used anywhere.
+     * Free means exactly "that cost is 0". Two queries in total, whatever the governorate count.
+     */
+    public List<DeliveryOptionResponse> listDeliveryOptions(ShippingSizeClass sizeClass,
+                                                            String locale) {
+        Map<Long, List<ShippingRate>> ratesByGovernorate = new HashMap<>();
+        for (Object[] row : rateRepository.findAllWithGovernorateId()) {
+            ratesByGovernorate.computeIfAbsent(((Number) row[0]).longValue(), k -> new ArrayList<>())
+                    .add((ShippingRate) row[1]);
+        }
+
+        List<DeliveryOptionResponse> result = new ArrayList<>();
+        for (Governorate governorate : governorateRepository.findByActiveTrueOrderByDisplayOrderAsc()) {
+            List<ShippingRate> found = ratesByGovernorate.get(governorate.getId());
+            if (found == null || found.isEmpty()) {
+                continue;
+            }
+            ZoneRates rates = new ZoneRates(found);
+            BigDecimal cap = rates.maxShippingCost();
+
+            BigDecimal unit;
+            if (sizeClass != null) {
+                ShippingRate rate = rates.rateFor(sizeClass);
+                unit = rate == null ? null : MoneyUtils.round(rate.getBaseCost());
+            } else {
+                unit = found.stream().map(r -> MoneyUtils.round(r.getBaseCost()))
+                        .min(BigDecimal::compareTo).orElse(null);
+            }
+            BigDecimal cost = unit == null ? null
+                    : (cap != null && unit.compareTo(cap) > 0 ? MoneyUtils.round(cap) : unit);
+
+            result.add(new DeliveryOptionResponse(
+                    governorate.getId(),
+                    governorate.getCode(),
+                    governorate.nameFor(locale),
+                    rates.zone().nameFor(locale),
+                    sizeClass,
+                    cost,
+                    cost != null && cost.signum() == 0,
+                    found.stream()
+                            .map(r -> new SizeRateResponse(r.getSizeClass(), MoneyUtils.round(r.getBaseCost())))
+                            .toList(),
+                    cap == null ? null : MoneyUtils.round(cap),
+                    (int) rates.deliveryDaysMin(),
+                    (int) rates.deliveryDaysMax()));
         }
         return result;
     }

@@ -11,6 +11,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.velora.api.catalog.domain.ShippingSizeClass;
+import java.util.List;
+import com.velora.api.shipping.dto.DeliveryOptionResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -28,6 +33,22 @@ public class ShippingController {
 
     public ShippingController(ShippingService shippingService) {
         this.shippingService = shippingService;
+    }
+
+    @Operation(summary = "Delivery cost and estimate per governorate (no cart needed)",
+            description = """
+                    For the product page. Every SERVED governorate with the zone's per-unit fee for
+                    `sizeClass` (the product's `shippingSizeClass`), capped at the zone maximum, plus
+                    `free` (true exactly when that fee is 0) and the delivery-days range. Closed
+                    governorates are omitted. The fee excludes quantity, COD fee and assembly: the
+                    cart total comes from `POST /shipping/quote`.
+                    """,
+            security = {})
+    @GetMapping("/governorates")
+    public List<DeliveryOptionResponse> governorates(
+            @RequestParam(required = false) ShippingSizeClass sizeClass,
+            HttpServletRequest request) {
+        return shippingService.listDeliveryOptions(sizeClass, LocaleResolver.resolve(request));
     }
 
     @Operation(summary = "Quote shipping for the current cart",

@@ -29,6 +29,19 @@ public interface ShippingRateRepository extends JpaRepository<ShippingRate, Long
             """)
     List<ShippingRate> findAllForGovernorate(@Param("governorateId") Long governorateId);
 
+    /**
+     * Every active rate of every active zone, with the governorate each belongs to, in ONE query:
+     * [governorateId, rate]. A governorate in no zone (or in a zone without rates) is absent.
+     */
+    @Query("""
+            select zg.governorate.id, r from ShippingRate r
+            join r.zone z
+            join ShippingZoneGovernorate zg on zg.zone.id = z.id
+            where r.active = true and z.active = true
+            order by r.sizeClass
+            """)
+    List<Object[]> findAllWithGovernorateId();
+
     @EntityGraph(attributePaths = {"zone"})
     List<ShippingRate> findByZoneIdAndActiveTrueOrderBySizeClassAsc(Long zoneId);
 

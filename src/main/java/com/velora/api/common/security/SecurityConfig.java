@@ -73,6 +73,7 @@ public class SecurityConfig {
             "/api/v1/seo/**",
             "/api/v1/variants/*/availability",
             "/api/v1/geo/**",
+            "/api/v1/shipping/governorates",
             "/api/v1/ping",
             "/uploads/**"
     };

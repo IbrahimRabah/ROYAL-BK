@@ -12,8 +12,14 @@ import com.velora.api.catalog.spec.ProductSpecifications;
 import com.velora.api.common.dto.PageResponse;
 import com.velora.api.common.exception.BusinessException;
 import com.velora.api.common.exception.ErrorCode;
+import com.velora.api.order.domain.FulfillmentStatus;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -113,6 +119,65 @@ public class ProductQueryService {
         return search(filter, pageable, locale);
     }
 
+    /**
+     * Order statuses that do NOT count as a sale: the goods never stayed sold.
+     * Everything else counts, including PENDING and PARTIALLY_RETURNED (net of returned units).
+     */
+    static final Set<FulfillmentStatus> NOT_A_SALE = Set.of(
+            FulfillmentStatus.CANCELLED, FulfillmentStatus.RETURNED,
+            FulfillmentStatus.RETURNED_TO_SELLER, FulfillmentStatus.REFUSED_ON_DELIVERY);
+
+    /**
+     * Best sellers: products ranked by net units sold (see {@link #NOT_A_SALE}), ties newest first.
+     * Products with sales come first; the rest of the page (and every later page) is filled with the
+     * remaining visible products, featured first then newest, so the strip is never empty.
+     * Ranking is ONE aggregate query; the fill is one paged query.
+     */
+    public PageResponse<ProductSummaryResponse> findBestSellers(Pageable pageable, String locale) {
+        int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+        int page = pageable.getPageNumber();
+        long offset = (long) page * size;
+
+        List<Long> rankedIds = productRepository.rankBestSellers(NOT_A_SALE).stream()
+                .map(row -> ((Number) row[0]).longValue())
+                .toList();
+        int rankedCount = rankedIds.size();
+
+        int from = (int) Math.min(offset, rankedCount);
+        int to = Math.min(rankedCount, from + size);
+        List<Long> pageRanked = rankedIds.subList(from, to);
+
+        Map<Long, Product> byId = new HashMap<>();
+        productRepository.findAllById(pageRanked).forEach(p -> byId.put(p.getId(), p));
+        List<Product> products = new ArrayList<>();
+        for (Long id : pageRanked) {
+            Product p = byId.get(id);
+            if (p != null) {
+                products.add(p);
+            }
+        }
+
+        Specification<Product> fillSpec = Specification.where(ProductSpecifications.isVisible());
+        if (!rankedIds.isEmpty()) {
+            fillSpec = fillSpec.and((root, q, cb) -> cb.not(root.get("id").in(rankedIds)));
+        }
+        int skip = (int) Math.max(0, offset - rankedCount);
+        int needed = size - products.size();
+        Sort fillSort = Sort.by(Sort.Order.desc("featured"), Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id"));
+        Page<Product> fill = productRepository.findAll(fillSpec,
+                PageRequest.of(0, Math.max(1, skip + needed), fillSort));
+        if (needed > 0 && skip < fill.getContent().size()) {
+            products.addAll(fill.getContent().subList(skip,
+                    Math.min(fill.getContent().size(), skip + needed)));
+        }
+
+        long total = rankedCount + fill.getTotalElements();
+        List<ProductSummaryResponse> content = products.stream()
+                .map(p -> mapper.toSummary(p, locale)).toList();
+        return PageResponse.from(new PageImpl<>(content, PageRequest.of(page, size), total));
+    }
+
     // ------------------------------------------------------------------ helpers
 
     /**
@@ -128,7 +193,7 @@ public class ProductQueryService {
             case "price_asc" -> Sort.by(Sort.Direction.ASC, "effectiveMinPrice");
             case "price_desc" -> Sort.by(Sort.Direction.DESC, "effectiveMinPrice");
             case "name" -> Sort.by(Sort.Direction.ASC, "slug");
-            // TODO: "best_selling" needs order data — add when the order module lands.
+            // Best sellers are served by GET /products/best-sellers (findBestSellers), not a sort key.
             default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };
 
